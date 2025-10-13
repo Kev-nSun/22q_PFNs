@@ -8,5 +8,4 @@ conda activate fmripnet
 
 python run_pnet_concat.py config.toml
 
-
 PFN_Similarity_ARI.R calculates the adjusted Rand index (ARI) of PFNs between and within subjects, across timepoints and pipelines, and visualizes these results.
