@@ -13,33 +13,32 @@ library(ggplot2)
 library(mclust)
 
 # Root directories
-new_root <- "C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/Longitudinal_PFNs/19_PFNs_INV10-_082325/Personalized_FN"      # has e.g. sub-XXXX+ses-baseline/, sub-XXXX+ses-2/
-old_root <- "C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/Longitudinal_PFNs/19_PFNs_INV10-_082325/Old_pipeline"         # has e.g. sub-XXXX/
+new_root <- "C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/Longitudinal_PFNs/19_PFNs_INV10-_101525/Personalized_FN"      # has e.g. sub-NDARINV10DN9UHY_ses-2YearFollowUpYArm1_desc-merged_timeseries.dtseries.ni/
+old_root <- "C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/Longitudinal_PFNs/19_PFNs_INV10-old_pipeline"         # has e.g. sub-XXXX/
 
 # Sessions (labels are the tail after 'ses-')
 baseline_sessions <- c("baselineYear1Arm1")
 year2_sessions    <- c("2YearFollowUpYArm1")
 
 # File pattern for PFN mats
-new_pfn_glob <- "**/FN.mat"
+new_pfn_glob <- "**/FN.mat" #will find FN.mat in subdirectory if recurse=TRUE
 old_pfn_glob <- "**/final_UV.mat"
 
 get_subject_id <- function(path) {
   nm <- fs::path_file(path)
-  m  <- stringr::str_match(nm, "^sub-([A-Za-z0-9]+)(?:\\+.*)?$")  # '+...' optional
+  m  <- stringr::str_match(nm, "^sub-([A-Za-z0-9]+)(?=(_|\\+|$))")
   ifelse(is.na(m[,2]), NA_character_, m[,2])
 }
 get_session <- function(path) {
-  nm <- path_file(path)
-  m <- str_match(nm, "ses-([A-Za-z0-9]+)$")
+  nm <- fs::path_file(path)
+  m  <- stringr::str_match(nm, "(?i)[_+]?ses-([A-Za-z0-9]+)(?:_|$)") # capture the token after "ses-" up to the next "_" or end
   ifelse(is.na(m[,2]), NA_character_, m[,2])
 }
 
 list_sub_sess_dirs <- function(root, recurse = Inf) {
-  # list everything under root; fail="never" avoids errors on permissions/placeholders
-  all_dirs <- dir_ls(root, type = "directory", recurse = recurse, fail = FALSE)
-  # keep dirs whose *basename* contains sub-<ID>+ses-<LABEL>
-  keep(all_dirs, ~ grepl("sub-[A-Za-z0-9]+\\+ses-[A-Za-z0-9]+", path_file(.x)))
+  all_dirs <- fs::dir_ls(root, type = "directory", recurse = recurse, fail = FALSE)
+  # basename must contain sub-<ID>{_ or +}ses-<LABEL>
+  keep(all_dirs, ~ grepl("sub-[A-Za-z0-9]+[_+]ses-[A-Za-z0-9]+", fs::path_file(.x)))
 }
 list_sub_dirs <- function(root, recurse = Inf) {
   # list everything under root; fail="never" avoids errors on permissions/placeholders
@@ -283,7 +282,7 @@ ARI_old_new <- pairwise_oldnew %>%
   ungroup() %>%
   transmute(subject_id, ARI, comp = "Old vs New (Baseline)")
 
-write.csv(ARI_old_new, file = "./19_PFNs_INV10-_082325/ARI_old_new.csv")
+write.csv(ARI_old_new, file = "../19_PFNs_INV10-_101525/ARI_old_new.csv")
 
 # Baseline vs Year 2 (within new)
 y2X <- new_year2_PFNs %>% mutate(y2_idx = row_number()) %>% dplyr::select(subject_id, y2_idx, v_y2 = PFN_labels)
@@ -299,7 +298,7 @@ ARI_bl_y2 <- pairwise_bly2 %>%
   ungroup() %>%
   transmute(subject_id, ARI, comp = "Baseline vs Year 2")
 
-write.csv(ARI_bl_y2, file = "./19_PFNs_INV10-_082325/ARI_bl_y2.csv")
+write.csv(ARI_bl_y2, file = "../19_PFNs_INV10-_101525/ARI_bl_y2.csv")
 
 
 # ---- STEP 6: Plotting intra-subject ARI (adjusted rand index) ----
@@ -334,7 +333,7 @@ p <- ggplot() +
   scale_x_continuous(breaks = c(1, 2),
                      labels = c("Baseline, Old vs pNet pipeline", "Baseline vs Year 2, pNet"),
                      limits = c(0.5, 2.5)) +
-  coord_cartesian(ylim =c(0.3,0.7)) + 
+  coord_cartesian(ylim =c(0.3,0.8)) + 
   labs(x = NULL, y = "Adjusted Rand Index (ARI)", color = NULL,
        title = "Within-subject PFN Similarity") +
   theme_minimal() +
@@ -348,7 +347,7 @@ p <- ggplot() +
   )
 
 print(p)
-ggsave('19_PFNs_INV10-_082325/PFN_ARI_19_0.3-0.7_boxplot+lines.png', width = 12, height = 14, dpi = 600, units = "cm")
+ggsave('../19_PFNs_INV10-_101525/PFN_ARI_within_subject_19_0.3-0.8_boxplot+lines.png', width = 12, height = 14, dpi = 600, units = "cm")
 
 
 # ---- STEP 7: Inter-Subject ARI (adjusted rand index) ----
@@ -436,7 +435,7 @@ p <- ggplot() +
   scale_x_continuous(breaks = c(1:3),
                      labels = x_labels,
                      limits = c(0.5, 3.5)) +
-  coord_cartesian(ylim = c(0.3,0.7)) +
+  coord_cartesian(ylim = c(0.3,0.8)) +
   labs(x = NULL, y = "Adjusted Rand Index (ARI)", color = NULL,
        title = "Between-subject PFN Similarity") +
   theme_minimal() +
@@ -450,5 +449,5 @@ p <- ggplot() +
   )
 
 print(p)
-ggsave('19_PFNs_INV10-_082325/PFN_ARI_inter_subject_19_0.3-0.7_boxplot+lines.png', width = 14, height = 14, dpi = 600, units = "cm")
+ggsave('../19_PFNs_INV10-_101525/PFN_ARI_bw_subject_19_0.3-0.8_boxplot+lines.png', width = 14, height = 14, dpi = 600, units = "cm")
 
