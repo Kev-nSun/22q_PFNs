@@ -1,11 +1,16 @@
 Code used to derive PFNs from 2 timepoints of ABCD. 
-First, stage_symlinks.py was used to creat symlinks of the path to scans that created parents directories of subject+session and also creates the txt file (file_scans) used in config.toml.
-pNet is run using run_pnet_concat.py, a modified script of fmripnet.py: https://github.com/MLDataAnalytics/pNet/blob/main/fmripnet.py, in which Combine_Scan=true, file_subject_ID = None, and file_subject_folder = None.
+First, merge_dtseries_by_session.py is used to manually concatenate timeseries using wb_command -cifti-merge. This script sorts by subject and session, and then concatenates all scans within regardless of how many scans are in the session directory. The script also creates a txt file called 19_Scan_List_Concat.txt that is fed into config.toml as the variable file_scans.
 
-To run run_pnet_concat.py, you need to activate the fmripnet conda environment and have the config.toml file in the same directory:
+To run merge_dtseries_by_session.py:
 
-conda activate fmripnet
+  python merge_dtseries_by_session.py \
+      --root /cbica/projects/PFN_ABCD/abcd-hcp-pipeline_0.1.4_timeseries \
+      --out  /cbica/projects/PFN_ABCD/long_PFN_scripts/pnet_inputs/merged_dtseries
 
-python run_pnet_concat.py config.toml
+Then, to run pnet, make sure config.toml is in the directory:
+
+  conda activate fmripnet
+
+  python /cbica/projects/PFN_ABCD/pNet/fmripnet.py -c config.toml --hpc
 
 PFN_Similarity_ARI.R calculates the adjusted Rand index (ARI) of PFNs between and within subjects, across timepoints and pipelines, and visualizes these results.
