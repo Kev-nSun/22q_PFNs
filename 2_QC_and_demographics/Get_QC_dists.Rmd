@@ -60,7 +60,7 @@ comb_22q <- ggplot(summary_22q, aes(x = mean_fd_combined)) +
   scale_x_continuous(breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2)) +
   scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10)) # Specify desired tick mark positions
 comb_22q
-ggsave(paste0("../22q_mean_FD_combined.tiff"), width = 19, height = 16, dpi = 600, units = "cm")
+ggsave(paste0("../Histograms/22q_mean_FD_combined.png"), width = 19, height = 16, dpi = 600, units = "cm")
 
 comb_PNC <- ggplot(summary_PNC, aes(x = mean_fd_combined)) +
   geom_histogram(binwidth = 0.01,    # Width of the bins
@@ -71,7 +71,7 @@ comb_PNC <- ggplot(summary_PNC, aes(x = mean_fd_combined)) +
        y = "Number of Subjects") +
   theme(plot.title = element_text(hjust = 0.5))
 comb_PNC
-ggsave(paste0("../PNC_mean_FD_combined.tiff"), width = 19, height = 16, dpi = 600, units = "cm")
+ggsave(paste0("../Histograms/PNC_mean_FD_combined.png"), width = 19, height = 16, dpi = 600, units = "cm")
 
 idemo_22q <- ggplot(summary_22q, aes(x = mean_fd_idemo)) +
   geom_histogram(binwidth = 0.01,    # Width of the bins
@@ -84,7 +84,7 @@ idemo_22q <- ggplot(summary_22q, aes(x = mean_fd_idemo)) +
   scale_x_continuous(breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2)) +
   scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10, 12)) # Specify desired tick mark positions
 idemo_22q
-ggsave(paste0("../22q_mean_FD_idemo.tiff"), width = 19, height = 16, dpi = 600, units = "cm")
+ggsave(paste0("../Histograms/22q_mean_FD_idemo.png"), width = 19, height = 16, dpi = 600, units = "cm")
 
 idemo_PNC <- ggplot(summary_PNC, aes(x = mean_fd_idemo)) +
   geom_histogram(binwidth = 0.01,    # Width of the bins
@@ -95,7 +95,7 @@ idemo_PNC <- ggplot(summary_PNC, aes(x = mean_fd_idemo)) +
        y = "Number of Subjects") +
   theme(plot.title = element_text(hjust = 0.5))
 idemo_PNC
-ggsave(paste0("../PNC_mean_FD_idemo.tiff"), width = 19, height = 16, dpi = 600, units = "cm")
+ggsave(paste0("../Histograms/PNC_mean_FD_idemo.png"), width = 19, height = 16, dpi = 600, units = "cm")
 
 rest_22q <- ggplot(summary_22q, aes(x = mean_fd_rest)) +
   geom_histogram(binwidth = 0.01,    # Width of the bins
@@ -108,7 +108,7 @@ rest_22q <- ggplot(summary_22q, aes(x = mean_fd_rest)) +
   scale_x_continuous(breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8)) +
   scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10)) # Specify desired tick mark positions
 rest_22q
-ggsave(paste0("../22q_mean_FD_rest.tiff"), width = 19, height = 16, dpi = 600, units = "cm")
+ggsave(paste0("../Histograms/22q_mean_FD_rest.png"), width = 19, height = 16, dpi = 600, units = "cm")
 
 rest_PNC <- ggplot(summary_PNC, aes(x = mean_fd_rest)) +
   geom_histogram(binwidth = 0.01,    # Width of the bins
@@ -119,8 +119,119 @@ rest_PNC <- ggplot(summary_PNC, aes(x = mean_fd_rest)) +
        y = "Number of Subjects") +
   theme(plot.title = element_text(hjust = 0.5))
 rest_PNC
-ggsave(paste0("../PNC_mean_FD_rest.tiff"), width = 19, height = 16, dpi = 600, units = "cm")
+ggsave(paste0("../Histograms/PNC_mean_FD_rest.png"), width = 19, height = 16, dpi = 600, units = "cm")
 
 ```
 
 
+
+## read in median FD summaries
+```{r cars}
+summary_22q <- read.csv("../22q_median_fd_summary.csv")
+summary_PNC <- read.csv("../PNC_median_fd_summary.csv")
+
+median_FD_comb_avg_22q <- mean(summary_22q$median_fd_combined)
+median_FD_comb_SD_22q <- sd(summary_22q$median_fd_combined)
+
+median_FD_comb_avg_PNC <- mean(summary_PNC$median_fd_combined)
+median_FD_comb_SD_PNC <- sd(summary_PNC$median_fd_combined)
+
+median_FD_idemo_avg_22q <- mean(summary_22q$median_fd_idemo, na.rm = TRUE)
+median_FD_idemo_SD_22q <- sd(summary_22q$median_fd_idemo, na.rm = TRUE)
+
+median_FD_idemo_avg_PNC <- mean(summary_PNC$median_fd_idemo, na.rm = TRUE)
+median_FD_idemo_SD_PNC <- sd(summary_PNC$median_fd_idemo, na.rm = TRUE)
+
+median_FD_rest_avg_22q <- mean(summary_22q$median_fd_rest, na.rm = TRUE)
+median_FD_rest_SD_22q <- sd(summary_22q$median_fd_rest, na.rm = TRUE)
+
+median_FD_rest_avg_PNC <- mean(summary_PNC$median_fd_rest, na.rm = TRUE)
+median_FD_rest_SD_PNC <- sd(summary_PNC$median_fd_rest, na.rm = TRUE)
+
+mean_22q <- c(median_FD_comb_avg_22q, median_FD_idemo_avg_22q, median_FD_rest_avg_22q)
+SD_22q <- c(median_FD_comb_SD_22q, median_FD_idemo_SD_22q, median_FD_rest_SD_22q)
+mean_PNC <- c(median_FD_comb_avg_PNC, median_FD_idemo_avg_PNC, median_FD_rest_avg_PNC)
+SD_PNC <- c(median_FD_comb_SD_PNC, median_FD_idemo_SD_PNC, median_FD_rest_SD_PNC)
+
+median_FD_df <- data.frame(mean_22q,SD_22q,mean_PNC,SD_PNC)
+rownames(median_FD_df) <- c("combined","idemo","rest")
+
+write.csv(median_FD_df,"../median_FD_stats_22q_v_PNC.csv")
+```
+
+
+## Plot median FD distributions
+```{r pressure, echo=FALSE}
+comb_22q <- ggplot(summary_22q, aes(x = median_fd_combined)) +
+  geom_histogram(binwidth = 0.01,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "22q Distribution of Median FD Across Concatenated Scans",
+       x = "Median FD",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_x_continuous(breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2)) +
+  scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10)) # Specify desired tick mark positions
+comb_22q
+ggsave(paste0("../Histograms/22q_median_FD_combined.png"), width = 19, height = 16, dpi = 600, units = "cm")
+
+comb_PNC <- ggplot(summary_PNC, aes(x = median_fd_combined)) +
+  geom_histogram(binwidth = 0.01,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "PNC Distribution of Median FD Across Concatenated Scans",
+       x = "Median FD",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5))
+comb_PNC
+ggsave(paste0("../Histograms/PNC_median_FD_combined.png"), width = 19, height = 16, dpi = 600, units = "cm")
+
+idemo_22q <- ggplot(summary_22q, aes(x = median_fd_idemo)) +
+  geom_histogram(binwidth = 0.01,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "22q Distribution of Median FD in IDEMO scan",
+       x = "Median FD",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_x_continuous(breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2)) +
+  scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10, 12)) # Specify desired tick mark positions
+idemo_22q
+ggsave(paste0("../Histograms/22q_median_FD_idemo.png"), width = 19, height = 16, dpi = 600, units = "cm")
+
+idemo_PNC <- ggplot(summary_PNC, aes(x = median_fd_idemo)) +
+  geom_histogram(binwidth = 0.01,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "PNC Distribution of Median FD in IDEMO scan",
+       x = "Median FD",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5))
+idemo_PNC
+ggsave(paste0("../Histograms/PNC_median_FD_idemo.png"), width = 19, height = 16, dpi = 600, units = "cm")
+
+rest_22q <- ggplot(summary_22q, aes(x = median_fd_rest)) +
+  geom_histogram(binwidth = 0.01,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "22q Distribution of Median FD in Rest scan",
+       x = "Median FD",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_x_continuous(breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8)) +
+  scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10)) # Specify desired tick mark positions
+rest_22q
+ggsave(paste0("../Histograms/22q_median_FD_rest.png"), width = 19, height = 16, dpi = 600, units = "cm")
+
+rest_PNC <- ggplot(summary_PNC, aes(x = median_fd_rest)) +
+  geom_histogram(binwidth = 0.01,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "PNC Distribution of Median FD in Rest scan",
+       x = "Median FD",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5))
+rest_PNC
+ggsave(paste0("../Histograms/PNC_median_FD_rest.png"), width = 19, height = 16, dpi = 600, units = "cm")
+
+```
