@@ -1,0 +1,126 @@
+---
+title: "Get_QC_dists"
+author: "Kevin Sun"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(readr)
+```
+
+## read in mean FD summaries
+```{r cars}
+summary_22q <- read.csv("../22q_mean_fd_summary.csv")
+summary_PNC <- read.csv("../PNC_mean_fd_summary.csv")
+
+mean_FD_comb_avg_22q <- mean(summary_22q$mean_fd_combined)
+mean_FD_comb_SD_22q <- sd(summary_22q$mean_fd_combined)
+
+mean_FD_comb_avg_PNC <- mean(summary_PNC$mean_fd_combined)
+mean_FD_comb_SD_PNC <- sd(summary_PNC$mean_fd_combined)
+
+mean_FD_idemo_avg_22q <- mean(summary_22q$mean_fd_idemo, na.rm = TRUE)
+mean_FD_idemo_SD_22q <- sd(summary_22q$mean_fd_idemo, na.rm = TRUE)
+
+mean_FD_idemo_avg_PNC <- mean(summary_PNC$mean_fd_idemo, na.rm = TRUE)
+mean_FD_idemo_SD_PNC <- sd(summary_PNC$mean_fd_idemo, na.rm = TRUE)
+
+mean_FD_rest_avg_22q <- mean(summary_22q$mean_fd_rest, na.rm = TRUE)
+mean_FD_rest_SD_22q <- sd(summary_22q$mean_fd_rest, na.rm = TRUE)
+
+mean_FD_rest_avg_PNC <- mean(summary_PNC$mean_fd_rest, na.rm = TRUE)
+mean_FD_rest_SD_PNC <- sd(summary_PNC$mean_fd_rest, na.rm = TRUE)
+
+mean_22q <- c(mean_FD_comb_avg_22q, mean_FD_idemo_avg_22q, mean_FD_rest_avg_22q)
+SD_22q <- c(mean_FD_comb_SD_22q, mean_FD_idemo_SD_22q, mean_FD_rest_SD_22q)
+mean_PNC <- c(mean_FD_comb_avg_PNC, mean_FD_idemo_avg_PNC, mean_FD_rest_avg_PNC)
+SD_PNC <- c(mean_FD_comb_SD_PNC, mean_FD_idemo_SD_PNC, mean_FD_rest_SD_PNC)
+
+mean_FD_df <- data.frame(mean_22q,SD_22q,mean_PNC,SD_PNC)
+rownames(mean_FD_df) <- c("combined","idemo","rest")
+
+write.csv(mean_FD_df,"../mean_FD_stats_22q_v_PNC.csv")
+```
+
+
+## Plot mean FD distributions
+```{r pressure, echo=FALSE}
+comb_22q <- ggplot(summary_22q, aes(x = mean_fd_combined)) +
+  geom_histogram(binwidth = 0.01,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "22q Distribution of Mean FD Across Concatenated Scans",
+       x = "Mean FD",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_x_continuous(breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2)) +
+  scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10)) # Specify desired tick mark positions
+comb_22q
+ggsave(paste0("../22q_mean_FD_combined.tiff"), width = 19, height = 16, dpi = 600, units = "cm")
+
+comb_PNC <- ggplot(summary_PNC, aes(x = mean_fd_combined)) +
+  geom_histogram(binwidth = 0.01,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "PNC Distribution of Mean FD Across Concatenated Scans",
+       x = "Mean FD",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5))
+comb_PNC
+ggsave(paste0("../PNC_mean_FD_combined.tiff"), width = 19, height = 16, dpi = 600, units = "cm")
+
+idemo_22q <- ggplot(summary_22q, aes(x = mean_fd_idemo)) +
+  geom_histogram(binwidth = 0.01,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "22q Distribution of Mean FD in IDEMO scan",
+       x = "Mean FD",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_x_continuous(breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2)) +
+  scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10, 12)) # Specify desired tick mark positions
+idemo_22q
+ggsave(paste0("../22q_mean_FD_idemo.tiff"), width = 19, height = 16, dpi = 600, units = "cm")
+
+idemo_PNC <- ggplot(summary_PNC, aes(x = mean_fd_idemo)) +
+  geom_histogram(binwidth = 0.01,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "PNC Distribution of Mean FD in IDEMO scan",
+       x = "Mean FD",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5))
+idemo_PNC
+ggsave(paste0("../PNC_mean_FD_idemo.tiff"), width = 19, height = 16, dpi = 600, units = "cm")
+
+rest_22q <- ggplot(summary_22q, aes(x = mean_fd_rest)) +
+  geom_histogram(binwidth = 0.01,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "22q Distribution of Mean FD in Rest scan",
+       x = "Mean FD",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_x_continuous(breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8)) +
+  scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10)) # Specify desired tick mark positions
+rest_22q
+ggsave(paste0("../22q_mean_FD_rest.tiff"), width = 19, height = 16, dpi = 600, units = "cm")
+
+rest_PNC <- ggplot(summary_PNC, aes(x = mean_fd_rest)) +
+  geom_histogram(binwidth = 0.01,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "PNC Distribution of Mean FD in Rest scan",
+       x = "Mean FD",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5))
+rest_PNC
+ggsave(paste0("../PNC_mean_FD_rest.tiff"), width = 19, height = 16, dpi = 600, units = "cm")
+
+```
+
+
