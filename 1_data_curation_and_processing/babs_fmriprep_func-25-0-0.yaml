@@ -1,0 +1,73 @@
+# Define the input datasets
+input_datasets:
+    BIDS:
+        required_files:
+            - "func/*_bold.nii*"
+            - "anat/*_T1w.nii*"
+        is_zipped: false
+        origin_url: "/cbica/projects/bbl_22q/data/raw_datalad"
+        path_in_babs: inputs/data/raw_datalad
+    fmriprep_anat:
+        required_files:
+            - "*fmriprep_anat*.zip"
+        is_zipped: true
+        origin_url: "/cbica/projects/bbl_22q/data/22q_fmriprep_anat_25-0-0-BABS_outputs"
+        path_in_babs: inputs/data/fmriprep_anat
+
+# Arguments in `singularity run`:
+bids_app_args:
+    $SUBJECT_SELECTION_FLAG: "--participant-label"
+    -w: "$BABS_TMPDIR"
+    --stop-on-first-crash: ""
+    --fs-license-file: "/cbica/projects/bbl_22q/software/freesurfer/license.txt"
+    --output-spaces: "func T1w MNI152NLin6Asym:res-2"
+    --force: "bbr"
+    --skip-bids-validation: ""
+    -vv: ""
+    --cifti-output: "91k"
+    --n_cpus: "8"
+    --mem-mb: "30000"
+    --fs-subjects-dir: "$PWD/inputs/data/fmriprep_anat/fmriprep_anat/sourcedata/freesurfer"
+
+# Output foldername(s) to be zipped, and the BIDS App version to be included in the zip filename(s):
+#   As fMRIPrep will use BIDS output layout, we need to ask BABS to create a folder 'fmriprep_func' to wrap all derivatives:
+all_results_in_one_zip: true
+zip_foldernames:
+    fmriprep_func: "25-0-0" # folder 'fmriprep_func' will be zipped into 'sub-xx_(ses-yy_)fmriprep_func-25-0-0.zip'
+
+# Arguments that are passed directly to singularity/apptainer:
+singularity_args:
+    - --containall
+    - --writable-tmpfs
+
+# How much cluster resources it needs:
+cluster_resources:
+    interpreting_shell: "/bin/bash"
+    hard_runtime_limit: "7:00:00"
+    temporary_disk_space: 200G
+    customized_text: |
+        #SBATCH -p all
+        #SBATCH --nodes=1 
+        #SBATCH --ntasks=1
+        #SBATCH --cpus-per-task=8
+        #SBATCH --mem=30G
+        #SBATCH --propagate=NONE
+
+# Necessary commands to be run first:
+#   change or add commands for setting up the virtual environment, for loading necessary modules, etc
+script_preamble: |
+    eval "$(micromamba shell hook --shell bash)"
+    micromamba activate babs
+
+# Where to run the jobs:
+job_compute_space: "${TMP}"   # replace "/path/to/temporary_compute_space" with yours
+
+# Alert messages that might be found in log files of failed jobs:
+#   These messages may be helpful for debugging errors in failed jobs.
+alert_log_messages:
+    stdout:
+        - "Excessive topologic defect encountered"
+        - "Cannot allocate memory"
+        - "mris_curvature_stats: Could not open file"
+        - "Numerical result out of range"
+        - "fMRIPrep failed"

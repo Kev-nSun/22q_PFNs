@@ -1,0 +1,68 @@
+# Define the input datasets
+input_datasets:
+    BIDS:
+        required_files:
+            - "anat/*_T1w.nii*"
+        is_zipped: false
+        origin_url: "/cbica/projects/bbl_22q/data/raw_datalad"
+        path_in_babs: inputs/data/raw_datalad
+
+# Arguments in `singularity run`:
+bids_app_args:
+    -w: "$BABS_TMPDIR"
+    --stop-on-first-crash: ""
+    --fs-license-file: "/cbica/projects/bbl_22q/software/freesurfer/license.txt"
+    --output-spaces: "MNI152NLin6Asym:res-1"
+    --force: "bbr"
+    --skip-bids-validation: ""
+    -vv: ""
+    --anat-only: ""
+    --cifti-output: "91k"
+    --n_cpus: "8"
+    --mem-mb: "20000"
+
+
+# Output foldername(s) to be zipped, and the BIDS App version to be included in the zip filename(s):
+#   As fMRIPrep will use BIDS output layout, we need to ask BABS to create a folder 'fmriprep_anat' to wrap all derivatives:
+all_results_in_one_zip: true
+zip_foldernames:
+    fmriprep_anat: "25-0-0"   # folder 'fmriprep_anat' will be zipped into 'sub-xx_(ses-yy_)fmriprep_anat-25-0-0.zip'
+# Note: The generated data can also be used to provide FreeSurfer derivatives as input dataset when running fMRIPrep on fMRI data,
+#   i.e., for use case: fMRIPrep with FreeSurfer results ingressed.
+
+# Arguments that are passed directly to singularity/apptainer:
+singularity_args:
+    - --containall
+    - --writable-tmpfs
+
+# How much cluster resources it needs:
+cluster_resources:
+    interpreting_shell: "/bin/bash"
+    hard_runtime_limit: "24:00:00"
+    temporary_disk_space: 200G
+    customized_text: |
+        #SBATCH -p all
+        #SBATCH --nodes=1 
+        #SBATCH --ntasks=1
+        #SBATCH --cpus-per-task=8
+        #SBATCH --mem=20G
+        #SBATCH --propagate=NONE
+
+# Necessary commands to be run first:
+#   change or add commands for setting up the virtual environment, for loading necessary modules, etc
+script_preamble: |
+    eval "$(micromamba shell hook --shell bash)"
+    micromamba activate babs
+
+# Where to run the jobs:
+job_compute_space: "${TMP}"   # replace "/path/to/temporary_compute_space" with yours
+
+# Alert messages that might be found in log files of failed jobs:
+#   These messages may be helpful for debugging errors in failed jobs.
+alert_log_messages:
+    stdout:
+        - "Excessive topologic defect encountered"
+        - "Cannot allocate memory"
+        - "mris_curvature_stats: Could not open file"
+        - "Numerical result out of range"
+        - "fMRIPrep failed"
