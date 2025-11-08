@@ -35,12 +35,12 @@ mean_FD_rest_SD_22q <- sd(summary_22q$mean_fd_rest, na.rm = TRUE)
 mean_FD_rest_avg_PNC <- mean(summary_PNC$mean_fd_rest, na.rm = TRUE)
 mean_FD_rest_SD_PNC <- sd(summary_PNC$mean_fd_rest, na.rm = TRUE)
 
-mean_22q <- c(mean_FD_comb_avg_22q, mean_FD_idemo_avg_22q, mean_FD_rest_avg_22q)
+avg_22q <- c(mean_FD_comb_avg_22q, mean_FD_idemo_avg_22q, mean_FD_rest_avg_22q)
 SD_22q <- c(mean_FD_comb_SD_22q, mean_FD_idemo_SD_22q, mean_FD_rest_SD_22q)
-mean_PNC <- c(mean_FD_comb_avg_PNC, mean_FD_idemo_avg_PNC, mean_FD_rest_avg_PNC)
+avg_PNC <- c(mean_FD_comb_avg_PNC, mean_FD_idemo_avg_PNC, mean_FD_rest_avg_PNC)
 SD_PNC <- c(mean_FD_comb_SD_PNC, mean_FD_idemo_SD_PNC, mean_FD_rest_SD_PNC)
 
-mean_FD_df <- data.frame(mean_22q,SD_22q,mean_PNC,SD_PNC)
+mean_FD_df <- data.frame(avg_22q,SD_22q,avg_PNC,SD_PNC)
 rownames(mean_FD_df) <- c("combined","idemo","rest")
 
 write.csv(mean_FD_df,"../mean_FD_stats_22q_v_PNC.csv")
@@ -57,7 +57,6 @@ comb_22q <- ggplot(summary_22q, aes(x = mean_fd_combined)) +
        x = "Mean FD",
        y = "Number of Subjects") +
   theme(plot.title = element_text(hjust = 0.5)) +
-  scale_x_continuous(breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2)) +
   scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10)) # Specify desired tick mark positions
 comb_22q
 ggsave(paste0("../Histograms/mean_FD/22q_mean_FD_combined.png"), width = 19, height = 16, dpi = 600, units = "cm")
@@ -81,7 +80,6 @@ idemo_22q <- ggplot(summary_22q, aes(x = mean_fd_idemo)) +
        x = "Mean FD",
        y = "Number of Subjects") +
   theme(plot.title = element_text(hjust = 0.5)) +
-  scale_x_continuous(breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2)) +
   scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10, 12)) # Specify desired tick mark positions
 idemo_22q
 ggsave(paste0("../Histograms/mean_FD/22q_mean_FD_idemo.png"), width = 19, height = 16, dpi = 600, units = "cm")
@@ -105,7 +103,6 @@ rest_22q <- ggplot(summary_22q, aes(x = mean_fd_rest)) +
        x = "Mean FD",
        y = "Number of Subjects") +
   theme(plot.title = element_text(hjust = 0.5)) +
-  scale_x_continuous(breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8)) +
   scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10)) # Specify desired tick mark positions
 rest_22q
 ggsave(paste0("../Histograms/mean_FD/22q_mean_FD_rest.png"), width = 19, height = 16, dpi = 600, units = "cm")
@@ -170,7 +167,6 @@ comb_22q <- ggplot(summary_22q, aes(x = median_fd_combined)) +
        x = "Median FD",
        y = "Number of Subjects") +
   theme(plot.title = element_text(hjust = 0.5)) +
-  scale_x_continuous(breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2)) +
   scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10, 12, 14, 16, 18)) # Specify desired tick mark positions
 comb_22q
 ggsave(paste0("../Histograms/median_FD/22q_median_FD_combined.png"), width = 19, height = 16, dpi = 600, units = "cm")
@@ -194,7 +190,6 @@ idemo_22q <- ggplot(summary_22q, aes(x = median_fd_idemo)) +
        x = "Median FD",
        y = "Number of Subjects") +
   theme(plot.title = element_text(hjust = 0.5)) +
-  scale_x_continuous(breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2)) +
   scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10, 12, 14, 16, 18)) # Specify desired tick mark positions
 idemo_22q
 ggsave(paste0("../Histograms/median_FD/22q_median_FD_idemo.png"), width = 19, height = 16, dpi = 600, units = "cm")
@@ -218,7 +213,6 @@ rest_22q <- ggplot(summary_22q, aes(x = median_fd_rest)) +
        x = "Median FD",
        y = "Number of Subjects") +
   theme(plot.title = element_text(hjust = 0.5)) +
-  scale_x_continuous(breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8)) +
   scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10)) # Specify desired tick mark positions
 rest_22q
 ggsave(paste0("../Histograms/median_FD/22q_median_FD_rest.png"), width = 19, height = 16, dpi = 600, units = "cm")

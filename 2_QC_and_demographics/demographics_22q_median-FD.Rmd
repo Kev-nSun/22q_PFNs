@@ -1,0 +1,209 @@
+---
+title: "clean_demographics"
+author: "Kevin Sun, adapted from Marc Jaskir"
+date: "`1/22/2023, edited 10/10/25"
+---
+
+
+## Load data
+```{r}
+rm(list=ls())
+
+### DEMOGRAPHICS ###
+
+# Load demographics by BBLID, which includes 22q subjects
+# Source: /data/secure/bit_dwh/oracle/subject.csv; dataset was manually scrubbed of PII
+demo_bbl_all <- read.table('C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/22q_data/subject_scrubbed.csv', sep=',', header=TRUE, fill=TRUE)
+
+### SCAN DATES (for computing 22q age) ###
+
+# Load 22q scan dates
+# Source: /cbica/projects/bbl_22q/data/derivatives/scan_dates
+scan_dates_22q <- read.table('C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/22q_data/22q_scan_dates.csv', sep=',', header=TRUE)
+
+### FILTERED 22q LIST WITH MEDIAN FD ###
+# filtered by having at least idemo or rest scan, each at least 3 min scan time, and having associated field map
+
+# Source: /cbica/projects/bbl_22q/data/22q_xcpd_extracted
+current_22q_list <- read.table('C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/QC/22q_median_fd_summary.csv', sep=',', header=TRUE) #114
+```
+
+## Perform basic preprocessing
+```{r}
+# Remove sub-016095 ses-008971 (2 sessions, remove this one it is missing resting state)
+scan_dates_22q <- scan_dates_22q[scan_dates_22q$ses != 'ses-008971',]
+# 
+# #merge scan_dates_22q and current_22q_list
+# scan_dates_FD_22q <- merge(scan_dates_22q,current_22q_list,by="sub")
+
+# Save original IDs from subject lists
+sublist_22q_orig <- current_22q_list$sub
+
+# Remove sub-* or sub-0* prefixes for uniformity
+scan_dates_22q$sub <- gsub('sub-0','',scan_dates_22q$sub)
+scan_dates_22q$sub <- gsub('sub-','',scan_dates_22q$sub)
+current_22q_list$sub <- gsub('sub-0','',current_22q_list$sub)
+current_22q_list$sub <- gsub('sub-','',current_22q_list$sub)
+
+# Remove duplicate rows
+scan_dates_22q <- unique(scan_dates_22q)
+
+# Convert to scan dates to date object
+scan_dates_22q$scan_date <- as.Date(scan_dates_22q$scan_date)
+```
+
+
+## Clean 22q demographics
+```{r}
+# Extract demographics
+demo_22q <- data.frame(matrix(NA, nrow=0,ncol=4))
+for (sub in current_22q_list$sub) {
+  sub_data <- demo_bbl_all[demo_bbl_all$BBLID == sub,]
+  if (nrow(sub_data) == 1) {
+    demo_22q <- rbind(demo_22q, data.frame(sub_data$BBLID, sub_data$SEX, sub_data$DOBIRTH, sub_data$RACE))
+  } else {
+    print(sub)
+  }
+}
+colnames(demo_22q) <- c('sub','sex','dob','race')
+
+# Recode sex variable
+demo_22q$sex <- ifelse(demo_22q$sex == 1, 'Male','Female')
+
+# Recode race variable
+demo_22q$race <- ifelse(demo_22q$race == 1, 'White', ifelse(demo_22q$race == 2, 'Black', ifelse(demo_22q$race == 4, 'Asian', ifelse(demo_22q$race == 5, 'Mixed',NA))))
+
+# Merge in scan dates
+demo_22q <- merge(demo_22q, scan_dates_22q, by.x='sub', by.y='sub', all.x=TRUE)
+
+# Convert dob to date object
+demo_22q$dob <- as.Date(demo_22q$dob, format="%m/%d/%Y")
+
+# Define age as difference between DOB & scan date, rounding to nearest year
+demo_22q$age <- as.numeric(difftime(demo_22q$scan_date,demo_22q$dob,unit="days")/365.25)
+
+# Remove DOB and DOI
+demo_22q$dob <- NULL
+demo_22q$scan_date <- NULL
+
+# Reorder variables
+demo_22q <- demo_22q[,c('sub','ses','sex','age','race')]
+```
+
+
+# Save demographic data frames
+```{r}
+### Add in median FD
+median_FD <- current_22q_list[, c("sub", "median_fd_combined", "median_fd_idemo", "median_fd_rest", "n_vols_idemo", "n_vols_rest")]
+demo_22q <- merge(demo_22q, median_FD, by = "sub", all.x = TRUE)
+demo_22q$n_vols_idemo[demo_22q$n_vols_idemo == 0] <- NA
+demo_22q$n_vols_rest[demo_22q$n_vols_rest == 0] <- NA
+demo_22q$n_vols_idemo <- demo_22q$n_vols_idemo + 1
+demo_22q$n_vols_rest <- demo_22q$n_vols_rest + 1
+
+### Restore original subject labels
+sublist_22q_orig <- data.frame(sublist_22q_orig)
+sub_orig_labels <- c()
+for (sub in demo_22q$sub) {
+  orig <- sublist_22q_orig[grep(sub, sublist_22q_orig$sub), ]
+  if (length(orig) == 1) {
+    sub_orig_labels <- c(sub_orig_labels, orig) 
+  } else {
+    print('WARNING: Multiple partial matches')
+  }
+}
+demo_22q$sub <- sub_orig_labels
+mean_age <- mean(demo_22q$age)
+
+### Save
+write.csv(demo_22q,'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/QC/demo_22q.csv', row.names = FALSE)
+```
+
+## Plot age distribution and median FD distributions of folks under 23
+```{r pressure, echo=FALSE}
+library(ggplot2)
+
+Fig <- ggplot(demo_22q, aes(x = age)) +
+  geom_histogram(binwidth = 1,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "22q Distribution of Age",
+       x = "Age",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5))
+Fig
+ggsave(paste0("../Histograms/22q_age.png"), width = 19, height = 16, dpi = 600, units = "cm")
+
+
+age_range_matched_22q <- demo_22q[demo_22q$age < 23, ] # N = 65
+
+#Get age histogram under 23 years old
+Fig <- ggplot(age_range_matched_22q, aes(x = age)) +
+  geom_histogram(binwidth = 1,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "22q Distribution of Age, Age < 23",
+       x = "Age",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_x_continuous(breaks = c(5, 10, 15, 20, 25)) # Specify desired tick mark positions +
+  scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10)) # Specify desired tick mark positions
+Fig
+ggsave(paste0("../Histograms/22q_age_under_23.png"), width = 19, height = 16, dpi = 600, units = "cm")
+mean_age_under_23 <- mean(age_range_matched_22q$age)
+
+#Get motion stats for those under 23
+median_fd_comb_avg <- mean(age_range_matched_22q$median_fd_combined)
+median_fd_comb_SD <- sd(age_range_matched_22q$median_fd_combined)
+
+median_fd_idemo_avg <- mean(age_range_matched_22q$median_fd_idemo, na.rm = TRUE)
+median_fd_idemo_SD <- sd(age_range_matched_22q$median_fd_idemo, na.rm = TRUE)
+
+median_fd_rest_avg <- mean(age_range_matched_22q$median_fd_rest, na.rm = TRUE)
+median_fd_rest_SD <- sd(age_range_matched_22q$median_fd_rest, na.rm = TRUE)
+
+avg_22q <- c(median_fd_comb_avg, median_fd_idemo_avg, median_fd_rest_avg)
+SD_22q <- c(median_fd_comb_SD, median_fd_idemo_SD, median_fd_rest_SD)
+
+median_fd_df <- data.frame(avg_22q,SD_22q)
+rownames(median_fd_df) <- c("combined","idemo","rest")
+
+write.csv(median_fd_df,"../median_FD_stats_22q_under_23.csv")
+
+comb_22q <- ggplot(age_range_matched_22q, aes(x = median_fd_combined)) +
+  geom_histogram(binwidth = 0.01,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "22q Distribution of Median FD Across Concatenated Scans, Age < 23",
+       x = "Median FD",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10)) # Specify desired tick mark positions
+comb_22q
+ggsave(paste0("../Histograms/median_FD/22q_median_FD_combined_10-23yo.png"), width = 19, height = 16, dpi = 600, units = "cm")
+
+idemo_22q <- ggplot(age_range_matched_22q, aes(x = median_fd_idemo)) +
+  geom_histogram(binwidth = 0.01,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "22q Distribution of Median FD in IDEMO scan, Age < 23",
+       x = "Median FD",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10, 12)) # Specify desired tick mark positions
+idemo_22q
+ggsave(paste0("../Histograms/median_FD/22q_median_FD_idemo_10-23yo.png"), width = 19, height = 16, dpi = 600, units = "cm")
+
+rest_22q <- ggplot(age_range_matched_22q, aes(x = median_fd_rest)) +
+  geom_histogram(binwidth = 0.01,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "22q Distribution of Median FD in Rest scan, Age < 23",
+       x = "Median FD",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10)) # Specify desired tick mark positions
+rest_22q
+ggsave(paste0("../Histograms/median_FD/22q_median_FD_rest_10-23yo.png"), width = 19, height = 16, dpi = 600, units = "cm")
+
+```

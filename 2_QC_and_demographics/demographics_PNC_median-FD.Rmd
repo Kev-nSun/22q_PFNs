@@ -1,0 +1,161 @@
+---
+title: "clean_demographics"
+author: "Kevin Sun, adapted from Marc Jaskir"
+date: "`1/22/2023, edited 10/10/25"
+---
+
+
+## Load data
+```{r}
+rm(list=ls())
+
+### DEMOGRAPHICS ###
+
+# Load demographics by BBLID, which includes 22q subjects
+# Source: /data/secure/bit_dwh/oracle/subject.csv; dataset was manually scrubbed of PII
+demo_PNC_all <- read_tsv('../../PNC_data/study-PNC_desc-participants.tsv')
+
+### FILTERED PNC LIST WITH MEDIAN FD ###
+# filtered by having at least idemo or rest scan, each at least 3 min scan time, and having associated field map
+# Source: /cbica/projects/bbl_22q/data/PNC_xcpd_extracted
+current_PNC_list <- read.table('C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/QC/PNC_median_fd_summary.csv', sep=',', header=TRUE) #1482
+```
+
+## Get sub ID in same format as demographics data, rename column
+```{r}
+# Save original IDs from subject lists
+sublist_PNC_orig <- current_PNC_list$sub
+
+# Remove sub-* or sub-0* prefixes for uniformity
+current_PNC_list$sub <- gsub('sub-0','',current_PNC_list$sub)
+current_PNC_list$sub <- gsub('sub-','',current_PNC_list$sub)
+```
+
+## Extract PNC demographics for current list
+```{r}
+# Extract demographics
+demo_PNC <- data.frame(matrix(NA, nrow=0,ncol=4))
+for (sub in current_PNC_list$sub) {
+  sub_data <- demo_PNC_all[demo_PNC_all$participant_id == sub,]
+  if (nrow(sub_data) == 1) {
+    demo_PNC <- rbind(demo_PNC, data.frame(sub_data$participant_id, sub_data$sex, sub_data$age, sub_data$race))
+  } else {
+    print(sub)
+  }
+}
+colnames(demo_PNC) <- c('sub','sex','age','race')
+```
+
+# Combine motion and demographics and save data frame
+```{r}
+### Add in median FD
+median_FD <- current_PNC_list[, c("sub", "median_fd_combined", "median_fd_idemo", "median_fd_rest", "n_vols_idemo", "n_vols_rest")]
+demo_PNC <- merge(demo_PNC, median_FD, by = "sub", all.x = TRUE)
+demo_PNC$n_vols_idemo[demo_PNC$n_vols_idemo == 0] <- NA
+demo_PNC$n_vols_rest[demo_PNC$n_vols_rest == 0] <- NA
+demo_PNC$n_vols_idemo <- demo_PNC$n_vols_idemo + 1
+demo_PNC$n_vols_rest <- demo_PNC$n_vols_rest + 1
+
+### Restore original subject labels
+sublist_PNC_orig <- data.frame(sublist_PNC_orig)
+sub_orig_labels <- c()
+for (sub in demo_PNC$sub) {
+  orig <- sublist_PNC_orig[grep(sub, sublist_PNC_orig$sub), ]
+  if (length(orig) == 1) {
+    sub_orig_labels <- c(sub_orig_labels, orig) 
+  } else {
+    print('WARNING: Multiple partial matches')
+  }
+}
+demo_PNC$sub <- sub_orig_labels
+mean_age <- mean(demo_PNC$age)
+
+### Save
+write.csv(demo_PNC,'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/QC/demo_PNC.csv', row.names = FALSE)
+```
+
+## Plot age distribution and median FD distributions of folks under 23
+```{r pressure, echo=FALSE}
+library(ggplot2)
+
+Fig <- ggplot(demo_PNC, aes(x = age)) +
+  geom_histogram(binwidth = 1,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "PNC Distribution of Age",
+       x = "Age",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_x_continuous(breaks = c(5, 10, 15, 20, 25)) # Specify desired tick mark positions
+Fig
+ggsave(paste0("../Histograms/PNC_age.png"), width = 19, height = 16, dpi = 600, units = "cm")
+
+
+age_range_matched_PNC <- demo_PNC[demo_PNC$age > 10.2, ]
+
+#Get age histogram under 23 years old
+Fig <- ggplot(age_range_matched_PNC, aes(x = age)) +
+  geom_histogram(binwidth = 1,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "PNC Distribution of Age, > 10.2",
+       x = "Age",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_x_continuous(breaks = c(5, 10, 15, 20, 25)) # Specify desired tick mark positions
+Fig
+ggsave(paste0("../Histograms/PNC_age_over_10.2.png"), width = 19, height = 16, dpi = 600, units = "cm")
+mean_age_over_10.2 <- mean(age_range_matched_PNC$age)
+
+#Get motion stats for those under 23
+median_fd_comb_avg <- mean(age_range_matched_PNC$median_fd_combined)
+median_fd_comb_SD <- sd(age_range_matched_PNC$median_fd_combined)
+
+median_fd_idemo_avg <- mean(age_range_matched_PNC$median_fd_idemo, na.rm = TRUE)
+median_fd_idemo_SD <- sd(age_range_matched_PNC$median_fd_idemo, na.rm = TRUE)
+
+median_fd_rest_avg <- mean(age_range_matched_PNC$median_fd_rest, na.rm = TRUE)
+median_fd_rest_SD <- sd(age_range_matched_PNC$median_fd_rest, na.rm = TRUE)
+
+avg_PNC <- c(median_fd_comb_avg, median_fd_idemo_avg, median_fd_rest_avg)
+SD_PNC <- c(median_fd_comb_SD, median_fd_idemo_SD, median_fd_rest_SD)
+
+median_fd_df <- data.frame(avg_PNC,SD_PNC)
+rownames(median_fd_df) <- c("combined","idemo","rest")
+
+write.csv(median_fd_df,"../median_FD_stats_PNC_over_10.2.csv")
+
+comb_PNC <- ggplot(age_range_matched_PNC, aes(x = median_fd_combined)) +
+  geom_histogram(binwidth = 0.01,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "PNC Distribution of Median FD Across Concatenated Scans, Age > 10.2",
+       x = "Median FD",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5))
+comb_PNC
+ggsave(paste0("../Histograms/median_FD/PNC_median_FD_combined_10-23yo.png"), width = 19, height = 16, dpi = 600, units = "cm")
+
+idemo_PNC <- ggplot(age_range_matched_PNC, aes(x = median_fd_idemo)) +
+  geom_histogram(binwidth = 0.01,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "PNC Distribution of Median FD in IDEMO scan, Age > 10.2",
+       x = "Median FD",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5))
+idemo_PNC
+ggsave(paste0("../Histograms/median_FD/PNC_median_FD_idemo_10-23yo.png"), width = 19, height = 16, dpi = 600, units = "cm")
+
+rest_PNC <- ggplot(age_range_matched_PNC, aes(x = median_fd_rest)) +
+  geom_histogram(binwidth = 0.01,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  labs(title = "PNC Distribution of Median FD in Rest scan, Age > 10.2",
+       x = "Median FD",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5))
+rest_PNC
+ggsave(paste0("../Histograms/median_FD/PNC_median_FD_rest_10-23yo.png"), width = 19, height = 16, dpi = 600, units = "cm")
+
+```
