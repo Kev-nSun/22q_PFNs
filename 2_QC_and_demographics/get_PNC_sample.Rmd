@@ -1,0 +1,52 @@
+---
+title: "log_log_PNC_group_normative"
+author: "Kevin Sun"
+date: "`10/31/2025`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(readr)
+```
+
+#Import PNC demographics, func stats for idemo + rest, and T1 QC
+```{r}
+
+PNC_demo_func <- read.csv("C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/PNC_data/demo_PNC.csv") # n = 1482
+colnames(PNC_demo_func)[1] <- "participant_id"
+PNC_demo_func$participant_id <- gsub('sub-0','',PNC_demo_func$participant_id)
+PNC_demo_func$participant_id <- gsub('sub-','',PNC_demo_func$participant_id)
+
+PNC_T1_qc <- read_tsv("C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/PNC_data/study-PNC_desc-T1_qc.tsv") # n = 1592
+
+PNC_all <- merge(PNC_demo_func,PNC_T1_qc,by="participant_id") # n = 1482
+
+```
+
+#Exclude based on scans present (need both idemo and rest scans)
+```{r}
+#
+PNC_no_idemo <- is.na(PNC_all$n_vols_idemo) # 4 missing
+PNC_no_rest <- is.na(PNC_all$n_vols_rest) # 86 missing
+
+PNC_all <- PNC_all[!PNC_no_idemo & !PNC_no_rest,] # 1392
+```
+
+# Exclude based on imaging quality criteria (T1 QC = Fail and median FD > 0.3)
+```{r}
+#Exclude qc_determination = Fail 
+PNC_all <- PNC_all[PNC_all$qc_determination != "Fail", ] # 1389
+
+#Exclude median_fd_combined > 0.3
+PNC_clean <- PNC_all[PNC_all$median_fd_combined <= 0.3, ] # 1332
+```
+
+# Save out filtered demographics and QC for PNC
+```{r}
+#Exclude qc_determination = Fail 
+write.csv(PNC_clean,'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Inputs/filtered_demo_PNC.csv', row.names = FALSE)
+```
+
