@@ -1,0 +1,952 @@
+---
+title: "log_log_PNC_group_normative"
+author: "Kevin Sun"
+date: "`10/31/2025`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(gifti)
+library(RNifti)
+library(ciftiTools)
+ciftiTools.setOption('wb_path', '/workbench')
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(sjPlot)
+library(mgcv)
+```
+
+#Import areas and demographics
+```{r}
+
+PNC_TC_and_PFNs_network_areas <- read.csv("../../Inputs/summary_PFNs.csv") # n = 1482
+colnames(PNC_TC_and_PFNs_network_areas)[1] <- "participant_id"
+colnames(PNC_TC_and_PFNs_network_areas)[3] <- "PFN1_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[4] <- "PFN2_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[5] <- "PFN3_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[6] <- "PFN4_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[7] <- "PFN5_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[8] <- "PFN6_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[9] <- "PFN7_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[10] <- "PFN8_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[11] <- "PFN9_soft_parcel_normed"
+
+PNC_demos <- read.csv("../../Inputs/filtered_demo_PNC.csv") #n = 1332
+PNC_all <- merge(PNC_TC_and_PFNs_network_areas,PNC_demos,by="participant_id") # n = 1332
+
+```
+
+#Get statistics of areas
+```{r}
+dout <- "../../Results/Area_stats"
+dir.create(dout)
+
+PFN_area_stats <- matrix(0,17,2)
+
+for (net in c(1:17)) {
+  PFN_area_stats[net,1] <- mean(PNC_all[,net+2])
+  PFN_area_stats[net,2] <- sd(PNC_all[,net+2])
+}
+PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+
+PFN_area_stats <- data.frame(Network = PFN_names, area_mean = PFN_area_stats[,1], area_SD = PFN_area_stats[,2])
+
+write_csv(PFN_area_stats,paste0(dout,"/PNC_PFNs_area_stats.csv"))
+```
+
+### Bar plot of PFN area stats:
+```{r}
+mean_area <- PFN_area_stats[,2]
+sd_area   <- PFN_area_stats[,3]
+
+# Base data frame with identity preserved
+data <- data.frame(
+  EffectSizes = as.numeric(mean_area),
+  SD          = as.numeric(sd_area),
+  Network     = 1:17
+)
+
+# ---- SORT BY MEAN AREA (ascending) ----
+data <- data[order(data$EffectSizes), ]
+
+# Make Network a factor in sorted order
+data$Network <- factor(data$Network, levels = data$Network)
+
+# Colors tied to original network numbers
+BorderColor <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E")
+
+LineType <- rep("solid", 17)
+
+# Get original network indices in sorted order
+network_idx <- as.numeric(as.character(data$Network))
+
+Fig <- ggplot(data, aes(x = Network, y = EffectSizes)) +
+  geom_bar(stat = "identity",
+           fill   = BorderColor[network_idx],
+           colour = BorderColor[network_idx],
+           linetype = LineType[network_idx],
+           width = 0.8) +
+  # ---- BLACK ERROR BARS ----
+  geom_errorbar(aes(ymin = EffectSizes - SD, ymax = EffectSizes + SD),
+                width = 0.2,
+                size = 0.9,
+                color = "black") +
+  labs(title = "PFN Area Mean + SD",
+       x = "Networks",
+       y = "Surface Area (mm2)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25,
+                                           color = BorderColor[network_idx],
+                                           angle = 45, hjust = 1),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  ) +
+  scale_y_continuous(limits = c(0, 21000))
+Fig
+ggsave("../../Results/Area_stats/PNC_PFNs_area_stats_plot_sorted.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+```
+
+## log-log models including age spline
+```{r}
+dout <- "../../Results/PNC_PFNs_net_areas_log-log_age_cov"
+dir.create(dout)
+
+summary(gam(log(PFN1_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all))
+PFN1_gam<-gam(log(PFN1_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+#tab_model(PFN1_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN1"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN1_area_TC_area_age_cov.doc", sep = ""))
+
+summary(gam(log(PFN2_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all))
+PFN2_gam<-gam(log(PFN2_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+#tab_model(PFN2_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN2"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN2_area_TC_area_age_cov.doc", sep = ""))
+
+summary(gam(log(PFN3_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all))
+PFN3_gam<-gam(log(PFN3_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+#tab_model(PFN3_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN3"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN3_area_TC_area_age_cov.doc", sep = ""))
+
+summary(gam(log(PFN4_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all))
+PFN4_gam<-gam(log(PFN4_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+#tab_model(PFN4_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN4"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN4_area_TC_area_age_cov.doc", sep = ""))
+
+summary(gam(log(PFN5_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all))
+PFN5_gam<-gam(log(PFN5_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+#tab_model(PFN5_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN5"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN5_area_TC_area_age_cov.doc", sep = ""))
+
+summary(gam(log(PFN6_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all))
+PFN6_gam<-gam(log(PFN6_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+#tab_model(PFN6_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN6"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN6_area_TC_area_age_cov.doc", sep = ""))
+
+summary(gam(log(PFN7_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all))
+PFN7_gam<-gam(log(PFN7_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+#tab_model(PFN7_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN7"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN7_area_TC_area_age_cov.doc", sep = ""))
+
+summary(gam(log(PFN8_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all))
+PFN8_gam<-gam(log(PFN8_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+#tab_model(PFN8_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN8"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN8_area_TC_area_age_cov.doc", sep = ""))
+
+summary(gam(log(PFN9_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all))
+PFN9_gam<-gam(log(PFN9_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+#tab_model(PFN9_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN9"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN9_area_TC_area_age_cov.doc", sep = ""))
+
+summary(gam(log(PFN10_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all))
+PFN10_gam<-gam(log(PFN10_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+#tab_model(PFN10_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN10"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN10_area_TC_area_age_cov.doc", sep = ""))
+
+summary(gam(log(PFN11_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all))
+PFN11_gam<-gam(log(PFN11_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+#tab_model(PFN11_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN11"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN11_area_TC_area_age_cov.doc", sep = ""))
+
+summary(gam(log(PFN12_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all))
+PFN12_gam<-gam(log(PFN12_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+#tab_model(PFN12_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN12"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN12_area_TC_area_age_cov.doc", sep = ""))
+
+summary(gam(log(PFN13_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all))
+PFN13_gam<-gam(log(PFN13_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+#tab_model(PFN13_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN13"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN13_area_TC_area_age_cov.doc", sep = ""))
+
+summary(gam(log(PFN14_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all))
+PFN14_gam<-gam(log(PFN14_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+#tab_model(PFN14_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN14"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN14_area_TC_area_age_cov.doc", sep = ""))
+
+summary(gam(log(PFN15_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all))
+PFN15_gam<-gam(log(PFN15_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+#tab_model(PFN15_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN15"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN15_area_TC_area_age_cov.doc", sep = ""))
+
+summary(gam(log(PFN16_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all))
+PFN16_gam<-gam(log(PFN16_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+#tab_model(PFN16_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN16"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN16_area_TC_area_age_cov.doc", sep = ""))
+
+summary(gam(log(PFN17_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all))
+PFN17_gam<-gam(log(PFN17_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+#tab_model(PFN17_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN17"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN17_area_TC_area_age_cov.doc", sep = ""))
+
+```
+
+# Get significance of beta scaling term via Wald test
+```{r}
+dout <- "../../Results/PNC_PFNs_net_areas_log-log_age_cov"
+
+log_log_results <- matrix(0,17,2)
+
+for (net in c(1:17)) {
+  beta <- summary(get(paste0("PFN",net,"_gam")))$p.table["log(TC_area)", "Estimate"]
+  SE <- summary(get(paste0("PFN",net,"_gam")))$p.table["log(TC_area)", "Std. Error"]
+  t_val <- (beta - 1) / SE # Null is beta = 1 (isometry, linear scaling)
+  df <- df.residual(get(paste0("PFN",net,"_gam")))
+  log_log_results[net,1] <- beta
+  log_log_results[net,2] <- 2 * (1 - pnorm(abs(t_val))) #Wald test
+}
+
+pvals_fdr <- p.adjust(log_log_results[,2], method = "fdr")
+PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+log_log_results_fdr <-  data.frame(PFN = PFN_names, beta = log_log_results[,1], pvals_fdr = pvals_fdr)
+
+write_csv(log_log_results_fdr,paste0(dout,"/PNC_PFNs_log_log_summary_results.csv"))
+```
+
+
+# Get significance of beta scaling term via ANOVA
+```{r}
+dout <- "../../Results/PNC_PFNs_net_areas_log-log_age_cov"
+
+log_log_ANOVA <- matrix(0,17,1)
+
+iso_gam_1 <- gam(log(PFN1_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+iso_gam_2 <- gam(log(PFN2_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+iso_gam_3 <- gam(log(PFN3_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+iso_gam_4 <- gam(log(PFN4_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+iso_gam_5 <- gam(log(PFN5_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+iso_gam_6 <- gam(log(PFN6_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+iso_gam_7 <- gam(log(PFN7_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+iso_gam_8 <- gam(log(PFN8_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+iso_gam_9 <- gam(log(PFN9_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+iso_gam_10 <- gam(log(PFN10_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+iso_gam_11 <- gam(log(PFN11_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+iso_gam_12 <- gam(log(PFN12_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+iso_gam_13 <- gam(log(PFN13_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+iso_gam_14 <- gam(log(PFN14_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+iso_gam_15 <- gam(log(PFN15_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+iso_gam_16 <- gam(log(PFN16_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+iso_gam_17 <- gam(log(PFN17_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+
+log_log_ANOVA[1] <- anova(iso_gam_1, PFN1_gam, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA[2] <- anova(iso_gam_2, PFN2_gam, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA[3] <- anova(iso_gam_3, PFN3_gam, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA[4] <- anova(iso_gam_4, PFN4_gam, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA[5] <- anova(iso_gam_5, PFN5_gam, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA[6] <- anova(iso_gam_6, PFN6_gam, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA[7] <- anova(iso_gam_7, PFN7_gam, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA[8] <- anova(iso_gam_8, PFN8_gam, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA[9] <- anova(iso_gam_9, PFN9_gam, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA[10] <- anova(iso_gam_10, PFN10_gam, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA[11] <- anova(iso_gam_11, PFN11_gam, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA[12] <- anova(iso_gam_12, PFN12_gam, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA[13] <- anova(iso_gam_13, PFN13_gam, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA[14] <- anova(iso_gam_14, PFN14_gam, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA[15] <- anova(iso_gam_15, PFN15_gam, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA[16] <- anova(iso_gam_16, PFN16_gam, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA[17] <- anova(iso_gam_17, PFN17_gam, test = "Chisq")$'Pr(>Chi'[2]
+
+pvals_fdr <- p.adjust(log_log_ANOVA, method = "fdr")
+PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+log_log_ANOVA_fdr <-  data.frame(PFN = PFN_names, beta = log_log_results[,1], pvals_fdr = pvals_fdr)
+
+write_csv(log_log_ANOVA_fdr,paste0(dout,"/PNC_PFNs_log_log_ANOVA_summary_results.csv"))
+```
+
+
+### Bar plot of scaling:
+```{r}
+p_vec_adj<- log_log_results_fdr[,3]
+print(p_vec_adj)
+keep_p <- ifelse(p_vec_adj<.05,1,0)
+print(keep_p)
+
+betas_from_zero <- log_log_results_fdr[,2] - 1
+sorted_beta = rank(betas_from_zero);
+pfn_inAscend <- c()
+for (t in c(1:17)) { pfn_inAscend <- append(pfn_inAscend,which(sorted_beta == t))}
+
+# Using 7 colors scheme for bar plot
+data <- data.frame(EffectSizes = as.numeric(betas_from_zero)) 
+data$EffectRank <- as.numeric(sorted_beta)
+# BorderColor1 is for colors of 1-17 network numbers(to lable the network numbers in a 1-17 order)
+BorderColor1 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E");
+				 
+# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN. ("black" is filled with black)
+BorderColor2 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#FFFFFF",
+                 "#FFFFFF", "#FFFFFF", "#E76178", "#E443FF", "#FFFFFF",
+                 "#FFFFFF", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#FFFFFF", "#F5BA2E");
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend]
+BorderColor3 <- BorderColor2[pfn_inAscend]
+
+# the line type for the 1-17 network bars (in a 1-17 order).  If a dashed line is needed for a bar, please change the value to "dashed".
+LineType <- c("solid", "solid", "solid", "solid", "dashed",
+              "dashed", "dashed", "solid", "solid", "dashed",
+              "dashed", "solid", "solid", "solid", "solid",
+              "dashed", "solid");
+
+Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
+  geom_bar(stat = "identity", fill=BorderColor3[sorted_beta], 
+           colour = BorderColor[sorted_beta], linetype = LineType, width = 0.8) + 
+  labs(title = "PFN Scaling in PNC + s(age)", x = "Networks", y = paste0("Cortical Scaling Coefficient (β)")) + theme_classic() +
+  theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
+  theme(axis.text.x = ggtext::element_markdown(size= 25, color = BorderColor), 
+        axis.text.y = ggtext::element_markdown(size= 25, color = "black"), 
+        axis.title=ggtext::element_markdown(size = 25)) +
+  theme(axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1)) +
+  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_beta)) +
+  scale_y_continuous(
+    breaks = c(0.8, 0.9, 1.0, 1.1, 1.2, 1.3) - 1, #set breaks relative to 0
+    limits = c(0.8, 1.3) - 1, # match PFN results (more extreme betas)
+    labels = c(0.8, 0.9, 1.0, 1.1, 1.2, 1.3)  # set labels so betas are shown relative to 1
+  )
+Fig
+ggsave(paste0("../../Results/PNC_PFNs_net_areas_log-log_age_cov/PNC_PFNs_log_log_scaling_plot.png"), width = 19, height = 16, dpi = 600, units = "cm");
+```
+
+
+```{r}
+library(gratia)
+
+draw(PFN1_gam)
+draw(PFN2_gam)
+draw(PFN3_gam)
+draw(PFN4_gam)
+draw(PFN5_gam)
+draw(PFN6_gam)
+draw(PFN7_gam)
+draw(PFN8_gam)
+draw(PFN9_gam)
+draw(PFN10_gam)
+draw(PFN11_gam)
+draw(PFN12_gam)
+draw(PFN13_gam)
+draw(PFN14_gam)
+draw(PFN15_gam)
+draw(PFN16_gam)
+draw(PFN17_gam)
+
+plot(PFN2_gam, select = 1, shade = TRUE, main = "PFN2, s(age)",
+     xlab = "Age (years)", ylab = "Effect on log(PFN2)")
+
+plot(PFN5_gam, select = 1, shade = TRUE, main = "PFN5, s(age)",
+     xlab = "Age (years)", ylab = "Effect on log(PFN5)")
+
+plot(PFN6_gam, select = 1, shade = TRUE, main = "PFN6, s(age)",
+     xlab = "Age (years)", ylab = "Effect on log(PFN6)")
+
+plot(PFN7_gam, select = 1, shade = TRUE, main = "PFN7, s(age)",
+     xlab = "Age (years)", ylab = "Effect on log(PFN7)")
+
+plot(PFN8_gam, select = 1, shade = TRUE, main = "PFN8, s(age)",
+     xlab = "Age (years)", ylab = "Effect on log(PFN8)")
+
+plot(PFN10_gam, select = 1, shade = TRUE, main = "PFN10, s(age)",
+     xlab = "Age (years)", ylab = "Effect on log(PFN10)")
+
+plot(PFN11_gam, select = 1, shade = TRUE, main = "PFN11, s(age)",
+     xlab = "Age (years)", ylab = "Effect on log(PFN11)")
+
+plot(PFN12_gam, select = 1, shade = TRUE, main = "PFN12, s(age)",
+     xlab = "Age (years)", ylab = "Effect on log(PFN12)")
+
+plot(PFN15_gam, select = 1, shade = TRUE, main = "PFN15, s(age)",
+     xlab = "Age (years)", ylab = "Effect on log(PFN15)")
+
+```
+
+## log-log models no age spline
+```{r}
+dout <- "../../Results/PNC_PFNs_net_areas_log-log"
+dir.create(dout)
+
+summary(gam(log(PFN1_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all))
+PFN1_gam_no_age<-gam(log(PFN1_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all)
+#tab_model(PFN1_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN1"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN1_area_TC_area.doc", sep = ""))
+
+summary(gam(log(PFN2_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all))
+PFN2_gam_no_age<-gam(log(PFN2_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all)
+#tab_model(PFN2_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN2"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN2_area_TC_area.doc", sep = ""))
+
+summary(gam(log(PFN3_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all))
+PFN3_gam_no_age<-gam(log(PFN3_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all)
+#tab_model(PFN3_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN3"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN3_area_TC_area.doc", sep = ""))
+
+summary(gam(log(PFN4_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all))
+PFN4_gam_no_age<-gam(log(PFN4_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all)
+#tab_model(PFN4_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN4"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN4_area_TC_area.doc", sep = ""))
+
+summary(gam(log(PFN5_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all))
+PFN5_gam_no_age<-gam(log(PFN5_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all)
+#tab_model(PFN5_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN5"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN5_area_TC_area.doc", sep = ""))
+
+summary(gam(log(PFN6_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all))
+PFN6_gam_no_age<-gam(log(PFN6_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all)
+#tab_model(PFN6_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN6"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN6_area_TC_area.doc", sep = ""))
+
+summary(gam(log(PFN7_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all))
+PFN7_gam_no_age<-gam(log(PFN7_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all)
+#tab_model(PFN7_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN7"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN7_area_TC_area.doc", sep = ""))
+
+summary(gam(log(PFN8_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all))
+PFN8_gam_no_age<-gam(log(PFN8_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all)
+#tab_model(PFN8_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN8"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN8_area_TC_area.doc", sep = ""))
+
+summary(gam(log(PFN9_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all))
+PFN9_gam_no_age<-gam(log(PFN9_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all)
+#tab_model(PFN9_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN9"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN9_area_TC_area.doc", sep = ""))
+
+summary(gam(log(PFN10_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all))
+PFN10_gam_no_age<-gam(log(PFN10_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all)
+#tab_model(PFN10_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN10"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN10_area_TC_area.doc", sep = ""))
+
+summary(gam(log(PFN11_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all))
+PFN11_gam_no_age<-gam(log(PFN11_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all)
+#tab_model(PFN11_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN11"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN11_area_TC_area.doc", sep = ""))
+
+summary(gam(log(PFN12_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all))
+PFN12_gam_no_age<-gam(log(PFN12_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all)
+#tab_model(PFN12_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN12"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN12_area_TC_area.doc", sep = ""))
+
+summary(gam(log(PFN13_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all))
+PFN13_gam_no_age<-gam(log(PFN13_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all)
+#tab_model(PFN13_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN13"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN13_area_TC_area.doc", sep = ""))
+
+summary(gam(log(PFN14_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all))
+PFN14_gam_no_age<-gam(log(PFN14_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all)
+#tab_model(PFN14_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN14"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN14_area_TC_area.doc", sep = ""))
+
+summary(gam(log(PFN15_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all))
+PFN15_gam_no_age<-gam(log(PFN15_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all)
+#tab_model(PFN15_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN15"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN15_area_TC_area.doc", sep = ""))
+
+summary(gam(log(PFN16_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all))
+PFN16_gam_no_age<-gam(log(PFN16_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all)
+#tab_model(PFN16_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN16"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN16_area_TC_area.doc", sep = ""))
+
+summary(gam(log(PFN17_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all))
+PFN17_gam_no_age<-gam(log(PFN17_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all)
+#tab_model(PFN17_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN17"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN17_area_TC_area.doc", sep = ""))
+
+```
+
+# Get significance of beta scaling term via Wald test in no age spline models
+```{r}
+dout <- "../../Results/PNC_PFNs_net_areas_log-log"
+
+log_log_results_no_age_cov <- matrix(0,17,2)
+
+for (net in c(1:17)) {
+  beta <- summary(get(paste0("PFN",net,"_gam_no_age")))$p.table["log(TC_area)", "Estimate"]
+  SE <- summary(get(paste0("PFN",net,"_gam_no_age")))$p.table["log(TC_area)", "Std. Error"]
+  t_val <- (beta - 1) / SE # Null is beta = 1 (isometry, linear scaling)
+  df <- df.residual(get(paste0("PFN",net,"_gam_no_age")))
+  log_log_results_no_age_cov[net,1] <- beta
+  log_log_results_no_age_cov[net,2] <- 2 * (1 - pnorm(abs(t_val))) #Wald test
+}
+
+pvals_fdr <- p.adjust(log_log_results_no_age_cov[,2], method = "fdr")
+PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+log_log_results_no_age_cov_fdr <-  data.frame(PFN = PFN_names, beta = log_log_results_no_age_cov[,1], pvals_fdr = pvals_fdr)
+
+write_csv(log_log_results_no_age_cov_fdr,paste0(dout,"/PNC_PFNs_log_log_no_age_summary_results.csv"))
+```
+
+
+# Get significance of beta scaling term via ANOVA in no age spline models
+```{r}
+dout <- "../../Results/PNC_PFNs_net_areas_log-log"
+
+log_log_ANOVA_no_age <- matrix(0,17,1)
+
+iso_no_age_gam_1 <- gam(log(PFN1_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined,data=PNC_all)
+iso_no_age_gam_2 <- gam(log(PFN2_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined,data=PNC_all)
+iso_no_age_gam_3 <- gam(log(PFN3_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined,data=PNC_all)
+iso_no_age_gam_4 <- gam(log(PFN4_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined,data=PNC_all)
+iso_no_age_gam_5 <- gam(log(PFN5_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined,data=PNC_all)
+iso_no_age_gam_6 <- gam(log(PFN6_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined,data=PNC_all)
+iso_no_age_gam_7 <- gam(log(PFN7_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined,data=PNC_all)
+iso_no_age_gam_8 <- gam(log(PFN8_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined,data=PNC_all)
+iso_no_age_gam_9 <- gam(log(PFN9_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined,data=PNC_all)
+iso_no_age_gam_10 <- gam(log(PFN10_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined,data=PNC_all)
+iso_no_age_gam_11 <- gam(log(PFN11_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined,data=PNC_all)
+iso_no_age_gam_12 <- gam(log(PFN12_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined,data=PNC_all)
+iso_no_age_gam_13 <- gam(log(PFN13_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined,data=PNC_all)
+iso_no_age_gam_14 <- gam(log(PFN14_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined,data=PNC_all)
+iso_no_age_gam_15 <- gam(log(PFN15_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined,data=PNC_all)
+iso_no_age_gam_16 <- gam(log(PFN16_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined,data=PNC_all)
+iso_no_age_gam_17 <- gam(log(PFN17_soft_parcel_normed)~offset(log(TC_area))+sex+euler+median_fd_combined,data=PNC_all)
+
+log_log_ANOVA_no_age[1] <- anova(iso_no_age_gam_1, PFN1_gam_no_age, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA_no_age[2] <- anova(iso_no_age_gam_2, PFN2_gam_no_age, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA_no_age[3] <- anova(iso_no_age_gam_3, PFN3_gam_no_age, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA_no_age[4] <- anova(iso_no_age_gam_4, PFN4_gam_no_age, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA_no_age[5] <- anova(iso_no_age_gam_5, PFN5_gam_no_age, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA_no_age[6] <- anova(iso_no_age_gam_6, PFN6_gam_no_age, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA_no_age[7] <- anova(iso_no_age_gam_7, PFN7_gam_no_age, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA_no_age[8] <- anova(iso_no_age_gam_8, PFN8_gam_no_age, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA_no_age[9] <- anova(iso_no_age_gam_9, PFN9_gam_no_age, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA_no_age[10] <- anova(iso_no_age_gam_10, PFN10_gam_no_age, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA_no_age[11] <- anova(iso_no_age_gam_11, PFN11_gam_no_age, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA_no_age[12] <- anova(iso_no_age_gam_12, PFN12_gam_no_age, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA_no_age[13] <- anova(iso_no_age_gam_13, PFN13_gam_no_age, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA_no_age[14] <- anova(iso_no_age_gam_14, PFN14_gam_no_age, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA_no_age[15] <- anova(iso_no_age_gam_15, PFN15_gam_no_age, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA_no_age[16] <- anova(iso_no_age_gam_16, PFN16_gam_no_age, test = "Chisq")$'Pr(>Chi'[2]
+log_log_ANOVA_no_age[17] <- anova(iso_no_age_gam_17, PFN17_gam_no_age, test = "Chisq")$'Pr(>Chi'[2]
+
+pvals_fdr <- p.adjust(log_log_ANOVA_no_age, method = "fdr")
+PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+log_log_ANOVA_no_age_fdr <-  data.frame(PFN = PFN_names, beta = log_log_results_no_age_cov[,1], pvals_fdr = pvals_fdr)
+
+write_csv(log_log_ANOVA_no_age_fdr,paste0(dout,"/PNC_PFNs_log_log_ANOVA_no_age_summary_results.csv"))
+```
+
+### Bar plot of scaling (no age term):
+```{r}
+p_vec_adj<- log_log_results_no_age_cov_fdr[,3]
+print(p_vec_adj)
+keep_p <- ifelse(p_vec_adj<.05,1,0)
+print(keep_p)
+
+betas_from_zero <- log_log_results_no_age_cov_fdr[,2] - 1
+sorted_beta = rank(betas_from_zero);
+pfn_inAscend <- c()
+for (t in c(1:17)) { pfn_inAscend <- append(pfn_inAscend,which(sorted_beta == t))}
+
+# Using 7 colors scheme for bar plot
+data <- data.frame(EffectSizes = as.numeric(betas_from_zero)) 
+data$EffectRank <- as.numeric(sorted_beta)
+# BorderColor1 is for colors of 1-17 network numbers(to lable the network numbers in a 1-17 order)
+BorderColor1 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E");
+				 
+# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN. ("black" is filled with black)
+BorderColor2 <- c("#E76178", "#7499C2", "#F5BA2E", "#FFFFFF", "#FFFFFF",
+                 "#FFFFFF", "#FFFFFF", "#E76178", "#E443FF", "#FFFFFF",
+                 "#FFFFFF", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#FFFFFF", "#F5BA2E");
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend]
+BorderColor3 <- BorderColor2[pfn_inAscend]
+
+# the line type for the 1-17 network bars (in a 1-17 order).  If a dashed line is needed for a bar, please change the value to "dashed".
+LineType <- c("solid", "solid", "solid", "dashed", "dashed",
+              "dashed", "dashed", "solid", "solid", "dashed",
+              "dashed", "solid", "solid", "solid", "solid",
+              "dashed", "solid");
+
+Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
+  geom_bar(stat = "identity", fill=BorderColor3[sorted_beta], 
+           colour = BorderColor[sorted_beta], linetype = LineType, width = 0.8) + 
+  labs(title = "PFN Scaling in PNC - s(age)", x = "Networks", y = paste0("Cortical Scaling Coefficient (β)")) + theme_classic() +
+  theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
+  theme(axis.text.x = ggtext::element_markdown(size= 25, color = BorderColor), 
+        axis.text.y = ggtext::element_markdown(size= 25, color = "black"), 
+        axis.title=ggtext::element_markdown(size = 25)) +
+  theme(axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1)) +
+  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_beta)) +
+  scale_y_continuous(
+    breaks = c(0.8, 0.9, 1.0, 1.1, 1.2, 1.3) - 1, #set breaks relative to 0
+    limits = c(0.8, 1.3) - 1, # match PFN results (more extreme betas)
+    labels = c(0.8, 0.9, 1.0, 1.1, 1.2, 1.3)  # set labels so betas are shown relative to 1
+  )
+Fig
+ggsave(paste0("../../Results/PNC_PFNs_net_areas_log-log/PNC_PFNs_log_log_scaling_no_age_plot.png"), width = 19, height = 16, dpi = 600, units = "cm");
+```
+
+#Get age effects and significance on PFN network surface area scaling
+```{r}
+dout <- "../../Results/PNC_PFNs_net_areas_log-log_age_cov"
+
+pvals <- c(anova(PFN1_gam_no_age, PFN1_gam, test = "Chisq")$'Pr(>Chi'[2],
+           anova(PFN2_gam_no_age, PFN2_gam, test = "Chisq")$'Pr(>Chi'[2],
+           anova(PFN3_gam_no_age, PFN3_gam, test = "Chisq")$'Pr(>Chi'[2],
+           anova(PFN4_gam_no_age, PFN4_gam, test = "Chisq")$'Pr(>Chi'[2],
+           anova(PFN5_gam_no_age, PFN5_gam, test = "Chisq")$'Pr(>Chi'[2],
+           anova(PFN6_gam_no_age, PFN6_gam, test = "Chisq")$'Pr(>Chi'[2],
+           anova(PFN7_gam_no_age, PFN7_gam, test = "Chisq")$'Pr(>Chi'[2],
+           anova(PFN8_gam_no_age, PFN8_gam, test = "Chisq")$'Pr(>Chi'[2],
+           anova(PFN9_gam_no_age, PFN9_gam, test = "Chisq")$'Pr(>Chi'[2],
+           anova(PFN10_gam_no_age, PFN10_gam, test = "Chisq")$'Pr(>Chi'[2],
+           anova(PFN11_gam_no_age, PFN11_gam, test = "Chisq")$'Pr(>Chi'[2],
+           anova(PFN12_gam_no_age, PFN12_gam, test = "Chisq")$'Pr(>Chi'[2],
+           anova(PFN13_gam_no_age, PFN13_gam, test = "Chisq")$'Pr(>Chi'[2],
+           anova(PFN14_gam_no_age, PFN14_gam, test = "Chisq")$'Pr(>Chi'[2],
+           anova(PFN15_gam_no_age, PFN15_gam, test = "Chisq")$'Pr(>Chi'[2],
+           anova(PFN16_gam_no_age, PFN16_gam, test = "Chisq")$'Pr(>Chi'[2],
+           anova(PFN17_gam_no_age, PFN17_gam, test = "Chisq")$'Pr(>Chi'[2]
+           )
+pvals_fdr <- p.adjust(pvals, method = "fdr")
+pvals <- data.frame(pvals)
+pvals_fdr <- data.frame(pvals_fdr)
+PFNs <- c("PFN1","PFN2","PFN3","PFN4","PFN5","PFN6","PFN7","PFN8","PFN9","PFN10","PFN11","PFN12","PFN13","PFN14","PFN15","PFN16","PFN17")
+
+delta_adj_R2 <- c(summary(PFN1_gam)$r.sq - summary(PFN1_gam_no_age)$r.sq,
+                  summary(PFN1_gam)$r.sq - summary(PFN2_gam_no_age)$r.sq,
+                  summary(PFN3_gam)$r.sq - summary(PFN3_gam_no_age)$r.sq,
+                  summary(PFN4_gam)$r.sq - summary(PFN4_gam_no_age)$r.sq,
+                  summary(PFN5_gam)$r.sq - summary(PFN5_gam_no_age)$r.sq,
+                  summary(PFN6_gam)$r.sq - summary(PFN6_gam_no_age)$r.sq,
+                  summary(PFN7_gam)$r.sq - summary(PFN7_gam_no_age)$r.sq,
+                  summary(PFN8_gam)$r.sq - summary(PFN8_gam_no_age)$r.sq,
+                  summary(PFN9_gam)$r.sq - summary(PFN9_gam_no_age)$r.sq,
+                  summary(PFN10_gam)$r.sq - summary(PFN10_gam_no_age)$r.sq,
+                  summary(PFN11_gam)$r.sq - summary(PFN11_gam_no_age)$r.sq,
+                  summary(PFN12_gam)$r.sq - summary(PFN12_gam_no_age)$r.sq,
+                  summary(PFN13_gam)$r.sq - summary(PFN13_gam_no_age)$r.sq,
+                  summary(PFN14_gam)$r.sq - summary(PFN14_gam_no_age)$r.sq,
+                  summary(PFN15_gam)$r.sq - summary(PFN15_gam_no_age)$r.sq,
+                  summary(PFN16_gam)$r.sq - summary(PFN16_gam_no_age)$r.sq,
+                  summary(PFN17_gam)$r.sq - summary(PFN17_gam_no_age)$r.sq
+                  )
+delta_adj_R2_pvals_fdr <- cbind(PFNs, delta_adj_R2, pvals_fdr)
+write_csv(delta_adj_R2_pvals_fdr,paste0(dout,"/PNC_PFNs_delta_age_adj_R2_fdr_pvals.csv"))
+
+partial_R2 <- c(((sum(residuals(PFN1_gam_no_age)^2) - sum(residuals(PFN1_gam)^2))/sum(residuals(PFN1_gam_no_age)^2)),
+                ((sum(residuals(PFN2_gam_no_age)^2) - sum(residuals(PFN2_gam)^2))/sum(residuals(PFN2_gam_no_age)^2)),
+                ((sum(residuals(PFN3_gam_no_age)^2) - sum(residuals(PFN3_gam)^2))/sum(residuals(PFN3_gam_no_age)^2)),
+                ((sum(residuals(PFN4_gam_no_age)^2) - sum(residuals(PFN4_gam)^2))/sum(residuals(PFN4_gam_no_age)^2)),
+                ((sum(residuals(PFN5_gam_no_age)^2) - sum(residuals(PFN5_gam)^2))/sum(residuals(PFN5_gam_no_age)^2)),
+                ((sum(residuals(PFN6_gam_no_age)^2) - sum(residuals(PFN6_gam)^2))/sum(residuals(PFN6_gam_no_age)^2)),
+                ((sum(residuals(PFN7_gam_no_age)^2) - sum(residuals(PFN7_gam)^2))/sum(residuals(PFN7_gam_no_age)^2)),
+                ((sum(residuals(PFN8_gam_no_age)^2) - sum(residuals(PFN8_gam)^2))/sum(residuals(PFN8_gam_no_age)^2)),
+                ((sum(residuals(PFN9_gam_no_age)^2) - sum(residuals(PFN9_gam)^2))/sum(residuals(PFN9_gam_no_age)^2)),
+                ((sum(residuals(PFN10_gam_no_age)^2) - sum(residuals(PFN10_gam)^2))/sum(residuals(PFN10_gam_no_age)^2)),
+                ((sum(residuals(PFN11_gam_no_age)^2) - sum(residuals(PFN11_gam)^2))/sum(residuals(PFN11_gam_no_age)^2)),
+                ((sum(residuals(PFN12_gam_no_age)^2) - sum(residuals(PFN12_gam)^2))/sum(residuals(PFN12_gam_no_age)^2)),
+                ((sum(residuals(PFN13_gam_no_age)^2) - sum(residuals(PFN13_gam)^2))/sum(residuals(PFN13_gam_no_age)^2)),
+                ((sum(residuals(PFN14_gam_no_age)^2) - sum(residuals(PFN14_gam)^2))/sum(residuals(PFN14_gam_no_age)^2)),
+                ((sum(residuals(PFN15_gam_no_age)^2) - sum(residuals(PFN15_gam)^2))/sum(residuals(PFN15_gam_no_age)^2)),
+                ((sum(residuals(PFN16_gam_no_age)^2) - sum(residuals(PFN16_gam)^2))/sum(residuals(PFN16_gam_no_age)^2)),
+                ((sum(residuals(PFN17_gam_no_age)^2) - sum(residuals(PFN17_gam)^2))/sum(residuals(PFN17_gam_no_age)^2))
+                )
+partial_R2_pvals_fdr <- cbind(PFNs, partial_R2, pvals_fdr)
+write_csv(partial_R2_pvals_fdr,paste0(dout,"/PNC_PFNs_age_partial_R2_fdr_pvals.csv"))
+
+#tab_model(PFN1_gam_no_age,PFN1_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("Model without Age", "Model with s(Age)"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN1_area_TC_area_s(age)_comparison.doc", sep = ""))
+
+#tab_model(PFN2_gam_no_age,PFN2_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("Model without Age", "Model with s(Age)"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN2_area_TC_area_s(age)_comparison.doc", sep = ""))
+
+#tab_model(PFN3_gam_no_age,PFN3_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("Model without Age", "Model with s(Age)"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN3_area_TC_area_s(age)_comparison.doc", sep = ""))
+
+#tab_model(PFN4_gam_no_age,PFN4_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("Model without Age", "Model with s(Age)"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN4_area_TC_area_s(age)_comparison.doc", sep = ""))
+
+#tab_model(PFN5_gam_no_age,PFN5_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("Model without Age", "Model with s(Age)"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN5_area_TC_area_s(age)_comparison.doc", sep = ""))
+
+#tab_model(PFN6_gam_no_age,PFN6_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("Model without Age", "Model with s(Age)"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN6_area_TC_area_s(age)_comparison.doc", sep = ""))
+
+#tab_model(PFN7_gam_no_age,PFN7_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("Model without Age", "Model with s(Age)"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN7_area_TC_area_s(age)_comparison.doc", sep = ""))
+
+#tab_model(PFN8_gam_no_age,PFN8_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("Model without Age", "Model with s(Age)"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN8_area_TC_area_s(age)_comparison.doc", sep = ""))
+
+#tab_model(PFN9_gam_no_age,PFN9_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("Model without Age", "Model with s(Age)"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN9_area_TC_area_s(age)_comparison.doc", sep = ""))
+
+#tab_model(PFN10_gam_no_age,PFN10_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("Model without Age", "Model with s(Age)"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN10_area_TC_area_s(age)_comparison.doc", sep = ""))
+
+#tab_model(PFN11_gam_no_age,PFN11_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("Model without Age", "Model with s(Age)"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN11_area_TC_area_s(age)_comparison.doc", sep = ""))
+
+#tab_model(PFN12_gam_no_age,PFN12_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("Model without Age", "Model with s(Age)"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN12_area_TC_area_s(age)_comparison.doc", sep = ""))
+
+#tab_model(PFN13_gam_no_age,PFN13_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("Model without Age", "Model with s(Age)"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN13_area_TC_area_s(age)_comparison.doc", sep = ""))
+
+#tab_model(PFN14_gam_no_age,PFN14_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("Model without Age", "Model with s(Age)"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN14_area_TC_area_s(age)_comparison.doc", sep = ""))
+
+#tab_model(PFN15_gam_no_age,PFN15_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("Model without Age", "Model with s(Age)"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN15_area_TC_area_s(age)_comparison.doc", sep = ""))
+
+#tab_model(PFN16_gam_no_age,PFN16_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("Model without Age", "Model with s(Age)"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN16_area_TC_area_s(age)_comparison.doc", sep = ""))
+
+#tab_model(PFN17_gam_no_age,PFN17_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("Model without Age", "Model with s(Age)"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN17_area_TC_area_s(age)_comparison.doc", sep = ""))
+
+```
+
+## linears models of age (for age effect directionality)
+```{r}
+dout <- "../../Results/PNC_PFNs_net_areas_log-log_age_cov"
+dir.create(dout)
+
+summary(lm(log(PFN1_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all))
+PFN1_lm_age<-lm(log(PFN1_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all)
+
+summary(lm(log(PFN2_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all))
+PFN2_lm_age<-lm(log(PFN2_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all)
+
+summary(lm(log(PFN3_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all))
+PFN3_lm_age<-lm(log(PFN3_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all)
+
+summary(lm(log(PFN4_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all))
+PFN4_lm_age<-lm(log(PFN4_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all)
+
+summary(lm(log(PFN5_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all))
+PFN5_lm_age<-lm(log(PFN5_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all)
+
+summary(lm(log(PFN6_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all))
+PFN6_lm_age<-lm(log(PFN6_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all)
+
+summary(lm(log(PFN7_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all))
+PFN7_lm_age<-lm(log(PFN7_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all)
+
+summary(lm(log(PFN8_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all))
+PFN8_lm_age<-lm(log(PFN8_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all)
+
+summary(lm(log(PFN9_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all))
+PFN9_lm_age<-lm(log(PFN9_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all)
+
+summary(lm(log(PFN10_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all))
+PFN10_lm_age<-lm(log(PFN10_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all)
+
+summary(lm(log(PFN11_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all))
+PFN11_lm_age<-lm(log(PFN11_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all)
+
+summary(lm(log(PFN12_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all))
+PFN12_lm_age<-lm(log(PFN12_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all)
+
+summary(lm(log(PFN13_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all))
+PFN13_lm_age<-lm(log(PFN13_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all)
+
+summary(lm(log(PFN14_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all))
+PFN14_lm_age<-lm(log(PFN14_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all)
+
+summary(lm(log(PFN15_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all))
+PFN15_lm_age<-lm(log(PFN15_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all)
+
+summary(lm(log(PFN16_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all))
+PFN16_lm_age<-lm(log(PFN16_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all)
+
+summary(lm(log(PFN17_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all))
+PFN17_lm_age<-lm(log(PFN17_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+age,data=PNC_all)
+
+
+lm_age_effects <- c(summary(PFN1_lm_age)$coefficients["age", "Estimate"],
+                  summary(PFN2_lm_age)$coefficients["age", "Estimate"],
+                  summary(PFN3_lm_age)$coefficients["age", "Estimate"],
+                  summary(PFN4_lm_age)$coefficients["age", "Estimate"],
+                  summary(PFN5_lm_age)$coefficients["age", "Estimate"],
+                  summary(PFN6_lm_age)$coefficients["age", "Estimate"],
+                  summary(PFN7_lm_age)$coefficients["age", "Estimate"],
+                  summary(PFN8_lm_age)$coefficients["age", "Estimate"],
+                  summary(PFN9_lm_age)$coefficients["age", "Estimate"],
+                  summary(PFN10_lm_age)$coefficients["age", "Estimate"],
+                  summary(PFN11_lm_age)$coefficients["age", "Estimate"],
+                  summary(PFN12_lm_age)$coefficients["age", "Estimate"],
+                  summary(PFN13_lm_age)$coefficients["age", "Estimate"],
+                  summary(PFN14_lm_age)$coefficients["age", "Estimate"],
+                  summary(PFN15_lm_age)$coefficients["age", "Estimate"],
+                  summary(PFN16_lm_age)$coefficients["age", "Estimate"],
+                  summary(PFN17_lm_age)$coefficients["age", "Estimate"]
+                  )
+
+PFNs <- c("PFN1","PFN2","PFN3","PFN4","PFN5","PFN6","PFN7","PFN8","PFN9","PFN10","PFN11","PFN12","PFN13","PFN14","PFN15","PFN16","PFN17")
+lm_age_effect_sizes <- cbind(PFNs,lm_age_effects)
+lm_age_effect_sizes <- data.frame(lm_age_effect_sizes)
+write_csv(lm_age_effect_sizes,paste0(dout,"/PNC_PFNs_lm_age_effect_size_for_sign.csv"))
+
+```
+
+### Bar plot of age effects (delta adj R2):
+```{r}
+p_vec_adj<- delta_adj_R2_pvals_fdr[,3]
+print(p_vec_adj)
+keep_p <- ifelse(p_vec_adj<.05,1,0)
+print(keep_p)
+
+pos_neg<- lm_age_effect_sizes[,2] #get sign based on linear term of age effect
+pos_neg <- ifelse(pos_neg>0,1,-1)
+
+delta_adj_R2 <- delta_adj_R2_pvals_fdr[,2]
+delta_adj_R2 <- ifelse(delta_adj_R2>0,delta_adj_R2,0) #If delta adj R2 is negative, change value to 0 (adding s(age) did not improve model)
+signed_effects <- delta_adj_R2 * pos_neg 
+sorted_signed_effects = rank(signed_effects, ties.method = "first"); #Take "first" network to handle ties (due to 0's introduced)
+pfn_inAscend <- c()
+for (t in c(1:17)) { pfn_inAscend <- append(pfn_inAscend,which(sorted_signed_effects == t))}
+
+# Using 7 colors scheme for bar plot
+data <- data.frame(EffectSizes = as.numeric(signed_effects)) 
+data$EffectRank <- as.numeric(sorted_signed_effects)
+# BorderColor1 is for colors of 1-17 network numbers(to lable the network numbers in a 1-17 order)
+BorderColor1 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E");
+				 
+# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN. ("black" is filled with black)
+BorderColor2 <- c("#FFFFFF", "#7499C2", "#FFFFFF", "#FFFFFF", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#FFFFFF", "#AF33AD",
+                 "#7499C2", "#E76178", "#FFFFFF", "#FFFFFF", "#F5BA2E", 
+                 "#FFFFFF", "#FFFFFF");
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend]
+BorderColor3 <- BorderColor2[pfn_inAscend]
+
+# the line type for the 1-17 network bars (in a 1-17 order).  If a dashed line is needed for a bar, please change the value to "dashed".
+LineType <- c("dashed", "solid", "dashed", "dashed", "solid",
+              "solid", "solid", "solid", "dashed", "solid",
+              "solid", "solid", "dashed", "dashed", "solid",
+              "dashed", "dashed");
+
+Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
+  geom_bar(stat = "identity", fill=BorderColor3[sorted_signed_effects], 
+           colour = BorderColor[sorted_signed_effects], linetype = LineType, width = 0.8) + 
+  labs(title = "PFN Age Effects in PNC", x = "Networks", y = paste0("Age Effect (ΔAdj R2)")) + theme_classic() +
+  theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
+  theme(axis.text.x = ggtext::element_markdown(size= 25, color = BorderColor), 
+        axis.text.y = ggtext::element_markdown(size= 25, color = "black"), 
+        axis.title=ggtext::element_markdown(size = 25)) +
+  theme(axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1)) +
+  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_signed_effects))
+Fig
+ggsave(paste0("../../Results/PNC_PFNs_net_areas_log-log_age_cov/PNC_PFNs_age_effect-delta_adj_R2_plot.png"), width = 19, height = 16, dpi = 600, units = "cm")
+```
+
+
+### Bar plot of age effects (partial R2):
+```{r}
+p_vec_adj<- partial_R2_pvals_fdr[,3]
+print(p_vec_adj)
+keep_p <- ifelse(p_vec_adj<.05,1,0)
+print(keep_p)
+
+pos_neg<- lm_age_effect_sizes[,2] #get sign based on linear term of age effect
+pos_neg <- ifelse(pos_neg>0,1,-1)
+
+partial_R2 <- partial_R2_pvals_fdr[,2]
+signed_effects <- partial_R2 * pos_neg 
+sorted_signed_effects = rank(signed_effects)
+pfn_inAscend <- c()
+for (t in c(1:17)) { pfn_inAscend <- append(pfn_inAscend,which(sorted_signed_effects == t))}
+
+# Using 7 colors scheme for bar plot
+data <- data.frame(EffectSizes = as.numeric(signed_effects)) 
+data$EffectRank <- as.numeric(sorted_signed_effects)
+# BorderColor1 is for colors of 1-17 network numbers(to lable the network numbers in a 1-17 order)
+BorderColor1 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E");
+				 
+# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN. ("black" is filled with black)
+BorderColor2 <- c("#FFFFFF", "#7499C2", "#FFFFFF", "#FFFFFF", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#FFFFFF", "#AF33AD",
+                 "#7499C2", "#E76178", "#FFFFFF", "#FFFFFF", "#F5BA2E", 
+                 "#FFFFFF", "#FFFFFF");
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend]
+BorderColor3 <- BorderColor2[pfn_inAscend]
+
+# the line type for the 1-17 network bars (in a 1-17 order).  If a dashed line is needed for a bar, please change the value to "dashed".
+LineType <- c("dashed", "solid", "dashed", "dashed", "solid",
+              "solid", "solid", "solid", "dashed", "solid",
+              "solid", "solid", "dashed", "dashed", "solid",
+              "dashed", "dashed");
+
+Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
+  geom_bar(stat = "identity", fill=BorderColor3[sorted_signed_effects], 
+           colour = BorderColor[sorted_signed_effects], linetype = LineType, width = 0.8) + 
+  labs(title = "PFN Age Effects in PNC", x = "Networks", y = paste0("Age Effect (Partial R2)")) + theme_classic() +
+  theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
+  theme(axis.text.x = ggtext::element_markdown(size= 25, color = BorderColor), 
+        axis.text.y = ggtext::element_markdown(size= 25, color = "black"), 
+        axis.title=ggtext::element_markdown(size = 25)) +
+  theme(axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1)) +
+  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_signed_effects))
+Fig
+ggsave(paste0("../../Results/PNC_PFNs_net_areas_log-log_age_cov/PNC_PFNs_age_effect-partial_R2_plot.png"), width = 19, height = 16, dpi = 600, units = "cm")
+```
+
+## log-log models including age by log(TC_area) interaction term
+```{r}
+dout <- "../../Results/PNC_PFNs_net_areas_log-log_age_cov"
+dir.create(dout)
+
+#Center log(TC_area) prior to including interaction term
+mean_log_TCA <- mean(log(PNC_all$TC_area), na.rm = TRUE)
+PNC_all$log_TCA_cent <- log(PNC_all$TC_area) - mean_log_TCA
+
+summary(gam(log(PFN1_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all))
+PFN1_gam_mod<-gam(log(PFN1_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all)
+#tab_model(PFN1_gam_mod,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline","Age Spline by log TC Area"),dv.labels=c("log PFN1"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN1_area_TC_area_age_interaction.doc", sep = ""))
+
+summary(gam(log(PFN2_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all))
+PFN2_gam_mod<-gam(log(PFN2_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all)
+#tab_model(PFN2_gam_mod,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline","Age Spline by log TC Area"),dv.labels=c("log PFN2"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN2_area_TC_area_age_interaction.doc", sep = ""))
+
+summary(gam(log(PFN3_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all))
+PFN3_gam_mod<-gam(log(PFN3_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all)
+#tab_model(PFN3_gam_mod,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline","Age Spline by log TC Area"),dv.labels=c("log PFN3"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN3_area_TC_area_age_interaction.doc", sep = ""))
+
+summary(gam(log(PFN4_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all))
+PFN4_gam_mod<-gam(log(PFN4_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all)
+#tab_model(PFN4_gam_mod,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline","Age Spline by log TC Area"),dv.labels=c("log PFN4"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN4_area_TC_area_age_interaction.doc", sep = ""))
+
+summary(gam(log(PFN5_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all))
+PFN5_gam_mod<-gam(log(PFN5_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all)
+#tab_model(PFN5_gam_mod,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline","Age Spline by log TC Area"),dv.labels=c("log PFN5"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN5_area_TC_area_age_interaction.doc", sep = ""))
+
+summary(gam(log(PFN6_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all))
+PFN6_gam_mod<-gam(log(PFN6_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all)
+#tab_model(PFN6_gam_mod,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline","Age Spline by log TC Area"),dv.labels=c("log PFN6"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN6_area_TC_area_age_interaction.doc", sep = ""))
+
+summary(gam(log(PFN7_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all))
+PFN7_gam_mod<-gam(log(PFN7_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all)
+#tab_model(PFN7_gam_mod,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline","Age Spline by log TC Area"),dv.labels=c("log PFN7"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN7_area_TC_area_age_interaction.doc", sep = ""))
+
+summary(gam(log(PFN8_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all))
+PFN8_gam_mod<-gam(log(PFN8_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all)
+#tab_model(PFN8_gam_mod,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline","Age Spline by log TC Area"),dv.labels=c("log PFN8"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN8_area_TC_area_age_interaction.doc", sep = ""))
+
+summary(gam(log(PFN9_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all))
+PFN9_gam_mod<-gam(log(PFN9_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all)
+#tab_model(PFN9_gam_mod,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline","Age Spline by log TC Area"),dv.labels=c("log PFN9"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN9_area_TC_area_age_interaction.doc", sep = ""))
+
+summary(gam(log(PFN10_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all))
+PFN10_gam_mod<-gam(log(PFN10_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all)
+#tab_model(PFN10_gam_mod,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline","Age Spline by log TC Area"),dv.labels=c("log PFN10"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN10_area_TC_area_age_interaction.doc", sep = ""))
+
+summary(gam(log(PFN11_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all))
+PFN11_gam_mod<-gam(log(PFN11_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all)
+#tab_model(PFN11_gam_mod,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline","Age Spline by log TC Area"),dv.labels=c("log PFN11"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN11_area_TC_area_age_interaction.doc", sep = ""))
+
+summary(gam(log(PFN12_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all))
+PFN12_gam_mod<-gam(log(PFN12_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all)
+#tab_model(PFN12_gam_mod,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline","Age Spline by log TC Area"),dv.labels=c("log PFN12"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN12_area_TC_area_age_interaction.doc", sep = ""))
+
+summary(gam(log(PFN13_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all))
+PFN13_gam_mod<-gam(log(PFN13_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all)
+#tab_model(PFN13_gam_mod,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline","Age Spline by log TC Area"),dv.labels=c("log PFN13"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN13_area_TC_area_age_interaction.doc", sep = ""))
+
+summary(gam(log(PFN14_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all))
+PFN14_gam_mod<-gam(log(PFN14_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all)
+#tab_model(PFN14_gam_mod,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline","Age Spline by log TC Area"),dv.labels=c("log PFN14"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN14_area_TC_area_age_interaction.doc", sep = ""))
+
+summary(gam(log(PFN15_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all))
+PFN15_gam_mod<-gam(log(PFN15_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all)
+#tab_model(PFN15_gam_mod,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline","Age Spline by log TC Area"),dv.labels=c("log PFN15"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN15_area_TC_area_age_interaction.doc", sep = ""))
+
+summary(gam(log(PFN16_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all))
+PFN16_gam_mod<-gam(log(PFN16_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all)
+#tab_model(PFN16_gam_mod,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline","Age Spline by log TC Area"),dv.labels=c("log PFN16"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN16_area_TC_area_age_interaction.doc", sep = ""))
+
+summary(gam(log(PFN17_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all))
+PFN17_gam_mod<-gam(log(PFN17_soft_parcel_normed)~log_TCA_cent+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=log_TCA_cent,k=4),data=PNC_all)
+#tab_model(PFN17_gam_mod,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline","Age Spline by log TC Area"),dv.labels=c("log PFN17"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_PFNs_PFN17_area_TC_area_age_interaction.doc", sep = ""))
+
+```
+
+

@@ -1,0 +1,67 @@
+---
+title: "log_log_PNC_group_normative"
+author: "Kevin Sun"
+date: "`10/31/2025`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(gifti)
+library(RNifti)
+library(ciftiTools)
+ciftiTools.setOption('wb_path', '/workbench')
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(sjPlot)
+library(mgcv)
+```
+
+#Import areas and demographics
+```{r}
+
+PNC_TC_and_group_network_areas <- read.csv("../../Inputs/summary.csv") # n = 1598
+colnames(PNC_TC_and_group_network_areas)[1] <- "participant_id"
+
+PNC_desc <- read_tsv("C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/PNC_data/study-PNC_desc-participants.tsv") # n = 1601
+PNC_areas_desc <- merge(PNC_TC_and_group_network_areas,PNC_desc,by="participant_id") # n = 1598
+
+PNC_T1_qc <- read_tsv("C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/PNC_data/study-PNC_desc-T1_qc.tsv") # n = 1592
+PNC_all <- merge(PNC_areas_desc,PNC_T1_qc,by="participant_id") # n = 1591
+
+#Exclude qc_determination = Fail 
+PNC_all <- PNC_all[PNC_all$qc_determination != "Fail", ] # 1583
+```
+
+
+## Age spline of TC area
+```{r}
+library(gratia)
+
+dout <- "../../Results/"
+dir.create(dout)
+
+summary(gam(log(TC_area)~sex+euler+s(age,k=4),data=PNC_all))
+TC_area_gam<-gam(log(TC_area)~sex+euler+s(age,k=4),data=PNC_all)
+tab_model(TC_area_gam,pred.labels = c("Intercept","Sex","Euler Number","Age Spline"),dv.labels=c("log PFN1"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/TC_area_age_spline_1583.doc", sep = ""))
+
+draw(TC_area_gam)
+
+summary(gam(log(TC_area)~sex+euler,data=PNC_all))
+TC_area_gam_no_age<-gam(log(TC_area)~sex+euler,data=PNC_all)
+
+summary(lm(log(TC_area)~sex+euler+age,data=PNC_all))
+TC_area_lm_age<-lm(log(TC_area)~sex+euler+age,data=PNC_all)
+
+TC_age_p_val <- anova(TC_area_gam_no_age, TC_area_gam, test = "Chisq")$'Pr(>Chi'[2]
+TC_age_partial_R2 <- summary(TC_area_gam)$r.sq - summary(TC_area_gam_no_age)$r.sq
+TC_age_lm_effect <- summary(TC_area_lm_age)$coefficients["age", "Estimate"]
+
+TC_area_age_stats <- c(TC_age_partial_R2, TC_age_p_val, TC_age_lm_effect)
+TC_area_labels <- c("s(Age)_Partial_R2", "P-value", "Age_lm_beta")
+TC_area_age_results <- cbind(TC_area_labels,TC_area_age_stats)
+TC_area_age_results <- data.frame(TC_area_age_results)
+
+write_csv(TC_area_age_results,paste0(dout,"/PNC_TC_area_age_effect_results_1583.csv"))
+```

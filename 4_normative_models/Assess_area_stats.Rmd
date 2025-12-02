@@ -1,0 +1,1456 @@
+---
+title: "log_log_PNC_group_normative"
+author: "Kevin Sun"
+date: "`10/31/2025`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(gifti)
+library(RNifti)
+library(ciftiTools)
+ciftiTools.setOption('wb_path', '/workbench')
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(sjPlot)
+library(mgcv)
+library(systemfit)
+```
+
+#Import areas and demographics
+```{r}
+PNC_TC_and_group_network_areas <- read.csv("../../Inputs/summary.csv") # n = 1598
+colnames(PNC_TC_and_group_network_areas)[1] <- "participant_id"
+
+PNC_TC_and_PFNs_network_areas <- read.csv("../../Inputs/summary_PFNs.csv") # n = 1482
+colnames(PNC_TC_and_PFNs_network_areas)[1] <- "participant_id"
+colnames(PNC_TC_and_PFNs_network_areas)[3] <- "PFN1_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[4] <- "PFN2_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[5] <- "PFN3_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[6] <- "PFN4_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[7] <- "PFN5_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[8] <- "PFN6_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[9] <- "PFN7_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[10] <- "PFN8_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[11] <- "PFN9_soft_parcel_normed"
+
+PNC_demos <- read.csv("../../Inputs/filtered_demo_PNC.csv") #n = 1332
+
+PNC_Group <- merge(PNC_TC_and_group_network_areas,PNC_demos,by="participant_id") # n = 1332
+PNC_PFNs <- merge(PNC_TC_and_PFNs_network_areas,PNC_demos,by="participant_id") # n = 1332
+
+#Check equivalence of TC areas
+TC_area_equivalence <- identical(PNC_Group$TC_area, PNC_PFNs$TC_area)
+
+```
+
+#Get TC, PFN, and group atlas area stats 
+```{r}
+TCA_avg <- mean(PNC_Group$TC_area)
+
+Group_area_stats <- matrix(0,17,2)
+for (net in c(1:9)) {
+  Group_area_stats[net,1] <- mean(PNC_Group[,net+10])
+  Group_area_stats[net,2] <- sd(PNC_Group[,net+10])
+}
+for (net in c(10:17)) {
+  Group_area_stats[net,1] <- mean(PNC_Group[,net-7])
+  Group_area_stats[net,2] <- sd(PNC_Group[,net-7])
+}
+PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+Group_area_stats <- data.frame(Network = PFN_names, area_mean = Group_area_stats[,1], area_SD = Group_area_stats[,2])
+
+
+PFN_area_stats <- matrix(0,17,2)
+for (net in c(1:17)) {
+  PFN_area_stats[net,1] <- mean(PNC_PFNs[,net+2])
+  PFN_area_stats[net,2] <- sd(PNC_PFNs[,net+2])
+}
+PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+PFN_area_stats <- data.frame(Network = PFN_names, area_mean = PFN_area_stats[,1], area_SD = PFN_area_stats[,2])
+```
+
+### Bar plot of PFN vs group atlas area stats:
+```{r}
+# First set: Group atlas
+mean_group <- Group_area_stats[,2]
+sd_group   <- Group_area_stats[,3]
+
+# Second set: PFN atlas
+mean_pfn <- PFN_area_stats[,2]
+sd_pfn   <- PFN_area_stats[,3]
+
+# Common color scheme by network (1–17)
+BorderColor <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E")
+
+LineType <- rep("solid", 17)
+
+# ---- NEW: compute average of the two mean areas per network ----
+mean_group_num <- as.numeric(mean_group)
+mean_pfn_num   <- as.numeric(mean_pfn)
+avg_mean       <- (mean_group_num + mean_pfn_num) / 2
+
+# Order networks by avg_mean (ascending)
+networks      <- 1:17
+order_idx     <- order(avg_mean)             # indices of networks sorted by avg
+ordered_nets  <- networks[order_idx]         # network IDs in sorted order
+
+# Long-format data: 2 rows per network (Group & PFN)
+data <- data.frame(
+  NetworkID   = rep(networks, times = 2),    # numeric identity (1–17)
+  EffectSizes = c(mean_group_num, mean_pfn_num),
+  SD          = c(as.numeric(sd_group), as.numeric(sd_pfn)),
+  Atlas       = factor(rep(c("Group", "PFN"), each = 17))
+)
+
+# Make the plotting factor ordered by average mean
+data$Network <- factor(data$NetworkID, levels = ordered_nets)
+
+# Precompute fill & border colors per row (by network identity)
+data$BorderCol <- BorderColor[data$NetworkID]
+#data$FillCol   <- ifelse(data$Atlas == "PFN",
+#                         data$BorderCol,   # PFN = filled with network color
+#                         "white")          # Group = gray
+data$FillCol   <- data$BorderCol  # both Group & PFN filled with network color
+
+# Position dodge for side-by-side bars
+pd <- position_dodge(width = 0.7)
+
+Fig <- ggplot(data, aes(x = Network, y = EffectSizes, group = Atlas)) +
+  # Bars (Group & PFN side by side)
+  geom_bar(
+    aes(fill = FillCol, colour = BorderCol),
+    stat     = "identity",
+    position = pd,
+    width    = 0.6,
+    linetype = "solid"
+  ) +
+  # Error bars
+  geom_errorbar(
+    aes(ymin = EffectSizes - SD, ymax = EffectSizes + SD),
+    position = pd,
+    width    = 0.2,
+    size     = 0.8
+  ) +
+  # Use colors as-is (no palette mapping)
+  scale_fill_identity() +
+  scale_colour_identity() +
+  labs(
+    title = "Group vs PFN Area Mean + SD",
+    x = "Networks",
+    y = "Surface Area (mm2)"
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(
+      size  = 25,
+      # x-axis colors in the same sorted order as the factor levels
+      color = BorderColor[ordered_nets],
+      angle = 45,
+      hjust = 1
+    ),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25),
+    legend.title = element_blank()
+  ) +
+  scale_y_continuous(limits = c(0, 21000))
+
+Fig
+ggsave(paste0("../../Results/Area_stats/PNC_Group_v_PFNs_area_stats_plot_sorted.png"), width = 24, height = 16, dpi = 600, units = "cm");
+```
+
+### Bar plot of PFN vs group atlas area stats:
+```{r}
+# First set: Group atlas
+sd_group   <- Group_area_stats[,3]
+
+# Second set: PFN atlas
+sd_pfn   <- PFN_area_stats[,3]
+
+# Common color scheme by network (1–17)
+BorderColor <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E")
+
+LineType <- rep("solid", 17)
+
+# ---- NEW: compute average of the two mean areas per network ----
+sd_group_num <- as.numeric(sd_group)
+sd_pfn_num   <- as.numeric(sd_pfn)
+avg_sd       <- (sd_group_num + sd_pfn_num) / 2
+
+# Order networks by avg_sd (ascending)
+networks      <- 1:17
+order_idx     <- order(avg_sd)             # indices of networks sorted by avg
+ordered_nets  <- networks[order_idx]         # network IDs in sorted order
+
+# Long-format data: 2 rows per network (Group & PFN)
+data <- data.frame(
+  NetworkID   = rep(networks, times = 2),    # numeric identity (1–17)
+  SD          = c(sd_group_num, sd_pfn_num),
+  Atlas       = factor(rep(c("Group", "PFN"), each = 17))
+)
+
+# Make the plotting factor ordered by average sd
+data$Network <- factor(data$NetworkID, levels = ordered_nets)
+
+# Precompute fill & border colors per row (by network identity)
+data$BorderCol <- BorderColor[data$NetworkID]
+#data$FillCol   <- ifelse(data$Atlas == "PFN",
+#                         data$BorderCol,   # PFN = filled with network color
+#                         "white")          # Group = gray
+data$FillCol   <- data$BorderCol  # both Group & PFN filled with network color
+
+# Position dodge for side-by-side bars
+pd <- position_dodge(width = 0.7)
+
+Fig <- ggplot(data, aes(x = Network, y = SD, group = Atlas)) +
+  # Bars (Group & PFN side by side)
+  geom_bar(
+    aes(fill = FillCol, colour = BorderCol),
+    stat     = "identity",
+    position = pd,
+    width    = 0.6,
+    linetype = "solid"
+  ) +
+  # Use colors as-is (no palette mapping)
+  scale_fill_identity() +
+  scale_colour_identity() +
+  labs(
+    title = "Group vs PFN Area SD",
+    x = "Networks",
+    y = "Surface Area SD (mm2)"
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(
+      size  = 25,
+      # x-axis colors in the same sorted order as the factor levels
+      color = BorderColor[ordered_nets],
+      angle = 45,
+      hjust = 1
+    ),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25),
+    legend.title = element_blank()
+  )
+Fig
+ggsave(paste0("../../Results/Area_stats/PNC_Group_v_PFNs_area_SD_plot_sorted.png"), width = 24, height = 16, dpi = 600, units = "cm");
+```
+
+## log-log plot to visualize allometry for group atlas
+```{r}
+prop <- Group_area_stats[1,2]/TCA_avg
+Fig <- ggplot(data = PNC_Group, aes(x = log(TC_area), y = log(PFN1_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#E76178") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#E76178") +
+  labs(title = "Group Atlas Network 1 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 1 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_Group_PFN1_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- Group_area_stats[2,2]/TCA_avg
+Fig <- ggplot(data = PNC_Group, aes(x = log(TC_area), y = log(PFN2_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#7499C2") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#7499C2") +
+  labs(title = "Group Atlas Network 2 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 2 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_Group_PFN2_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- Group_area_stats[3,2]/TCA_avg
+Fig <- ggplot(data = PNC_Group, aes(x = log(TC_area), y = log(PFN3_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#F5BA2E") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#F5BA2E") +
+  labs(title = "Group Atlas Network 3 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 3 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_Group_PFN3_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- Group_area_stats[4,2]/TCA_avg
+Fig <- ggplot(data = PNC_Group, aes(x = log(TC_area), y = log(PFN4_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#7499C2") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#7499C2") +
+  labs(title = "Group Atlas Network 4 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 4 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_Group_PFN4_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- Group_area_stats[5,2]/TCA_avg
+Fig <- ggplot(data = PNC_Group, aes(x = log(TC_area), y = log(PFN5_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#00A131") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#00A131") +
+  labs(title = "Group Atlas Network 5 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 5 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_Group_PFN5_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- Group_area_stats[6,2]/TCA_avg
+Fig <- ggplot(data = PNC_Group, aes(x = log(TC_area), y = log(PFN6_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#AF33AD") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#AF33AD") +
+  labs(title = "Group Atlas Network 6 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 6 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_Group_PFN6_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- Group_area_stats[7,2]/TCA_avg
+Fig <- ggplot(data = PNC_Group, aes(x = log(TC_area), y = log(PFN7_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#E443FF") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#E443FF") +
+  labs(title = "Group Atlas Network 7 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 7 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_Group_PFN7_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- Group_area_stats[8,2]/TCA_avg
+Fig <- ggplot(data = PNC_Group, aes(x = log(TC_area), y = log(PFN8_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#E76178") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#E76178") +
+  labs(title = "Group Atlas Network 8 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 8 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_Group_PFN8_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- Group_area_stats[9,2]/TCA_avg
+Fig <- ggplot(data = PNC_Group, aes(x = log(TC_area), y = log(PFN9_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#E443FF") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#E443FF") +
+  labs(title = "Group Atlas Network 9 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 9 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_Group_PFN9_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- Group_area_stats[10,2]/TCA_avg
+Fig <- ggplot(data = PNC_Group, aes(x = log(TC_area), y = log(PFN10_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#AF33AD") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#AF33AD") +
+  labs(title = "Group Atlas Network 10 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 10 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_Group_PFN10_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- Group_area_stats[11,2]/TCA_avg
+Fig <- ggplot(data = PNC_Group, aes(x = log(TC_area), y = log(PFN11_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#7499C2") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#7499C2") +
+  labs(title = "Group Atlas Network 11 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 11 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_Group_PFN11_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- Group_area_stats[12,2]/TCA_avg
+Fig <- ggplot(data = PNC_Group, aes(x = log(TC_area), y = log(PFN12_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#E76178") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#E76178") +
+  labs(title = "Group Atlas Network 12 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 12 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_Group_PFN12_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- Group_area_stats[13,2]/TCA_avg
+Fig <- ggplot(data = PNC_Group, aes(x = log(TC_area), y = log(PFN13_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#7499C2") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#7499C2") +
+  labs(title = "Group Atlas Network 13 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 13 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_Group_PFN13_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- Group_area_stats[14,2]/TCA_avg
+Fig <- ggplot(data = PNC_Group, aes(x = log(TC_area), y = log(PFN14_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#00A131") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#00A131") +
+  labs(title = "Group Atlas Network 14 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 14 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_Group_PFN14_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- Group_area_stats[15,2]/TCA_avg
+Fig <- ggplot(data = PNC_Group, aes(x = log(TC_area), y = log(PFN15_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#F5BA2E") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#F5BA2E") +
+  labs(title = "Group Atlas Network 15 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 15 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_Group_PFN15_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- Group_area_stats[16,2]/TCA_avg
+Fig <- ggplot(data = PNC_Group, aes(x = log(TC_area), y = log(PFN16_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#4E31A8") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#4E31A8") +
+  labs(title = "Group Atlas Network 16 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 16 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_Group_PFN16_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- Group_area_stats[17,2]/TCA_avg
+Fig <- ggplot(data = PNC_Group, aes(x = log(TC_area), y = log(PFN17_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#F5BA2E") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#F5BA2E") +
+  labs(title = "Group Atlas Network 17 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 17 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_Group_PFN17_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+```
+
+## log-log plot to visualize allometry for PFNs
+```{r}
+prop <- PFN_area_stats[1,2]/TCA_avg
+Fig <- ggplot(data = PNC_PFNs, aes(x = log(TC_area), y = log(PFN1_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#E76178") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#E76178") +
+  labs(title = "PFN Network 1 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 1 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_PFNs_PFN1_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- PFN_area_stats[2,2]/TCA_avg
+Fig <- ggplot(data = PNC_PFNs, aes(x = log(TC_area), y = log(PFN2_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#7499C2") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#7499C2") +
+  labs(title = "PFN Network 2 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 2 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_PFNs_PFN2_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- PFN_area_stats[3,2]/TCA_avg
+Fig <- ggplot(data = PNC_PFNs, aes(x = log(TC_area), y = log(PFN3_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#F5BA2E") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#F5BA2E") +
+  labs(title = "PFN Network 3 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 3 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_PFNs_PFN3_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- PFN_area_stats[4,2]/TCA_avg
+Fig <- ggplot(data = PNC_PFNs, aes(x = log(TC_area), y = log(PFN4_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#7499C2") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#7499C2") +
+  labs(title = "PFN Network 4 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 4 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_PFNs_PFN4_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- PFN_area_stats[5,2]/TCA_avg
+Fig <- ggplot(data = PNC_PFNs, aes(x = log(TC_area), y = log(PFN5_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#00A131") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#00A131") +
+  labs(title = "PFN Network 5 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 5 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_PFNs_PFN5_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- PFN_area_stats[6,2]/TCA_avg
+Fig <- ggplot(data = PNC_PFNs, aes(x = log(TC_area), y = log(PFN6_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#AF33AD") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#AF33AD") +
+  labs(title = "PFN Network 6 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 6 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_PFNs_PFN6_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- PFN_area_stats[7,2]/TCA_avg
+Fig <- ggplot(data = PNC_PFNs, aes(x = log(TC_area), y = log(PFN7_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#E443FF") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#E443FF") +
+  labs(title = "PFN Network 7 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 7 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_PFNs_PFN7_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- PFN_area_stats[8,2]/TCA_avg
+Fig <- ggplot(data = PNC_PFNs, aes(x = log(TC_area), y = log(PFN8_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#E76178") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#E76178") +
+  labs(title = "PFN Network 8 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 8 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_PFNs_PFN8_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- PFN_area_stats[9,2]/TCA_avg
+Fig <- ggplot(data = PNC_PFNs, aes(x = log(TC_area), y = log(PFN9_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#E443FF") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#E443FF") +
+  labs(title = "PFN Network 9 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 9 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_PFNs_PFN9_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- PFN_area_stats[10,2]/TCA_avg
+Fig <- ggplot(data = PNC_PFNs, aes(x = log(TC_area), y = log(PFN10_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#AF33AD") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#AF33AD") +
+  labs(title = "PFN Network 10 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 10 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_PFNs_PFN10_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- PFN_area_stats[11,2]/TCA_avg
+Fig <- ggplot(data = PNC_PFNs, aes(x = log(TC_area), y = log(PFN11_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#7499C2") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#7499C2") +
+  labs(title = "PFN Network 11 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 11 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_PFNs_PFN11_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- PFN_area_stats[12,2]/TCA_avg
+Fig <- ggplot(data = PNC_PFNs, aes(x = log(TC_area), y = log(PFN12_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#E76178") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#E76178") +
+  labs(title = "PFN Network 12 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 12 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_PFNs_PFN12_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- PFN_area_stats[13,2]/TCA_avg
+Fig <- ggplot(data = PNC_PFNs, aes(x = log(TC_area), y = log(PFN13_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#7499C2") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#7499C2") +
+  labs(title = "PFN Network 13 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 13 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_PFNs_PFN13_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- PFN_area_stats[14,2]/TCA_avg
+Fig <- ggplot(data = PNC_PFNs, aes(x = log(TC_area), y = log(PFN14_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#00A131") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#00A131") +
+  labs(title = "PFN Network 14 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 14 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_PFNs_PFN14_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- PFN_area_stats[15,2]/TCA_avg
+Fig <- ggplot(data = PNC_PFNs, aes(x = log(TC_area), y = log(PFN15_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#F5BA2E") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#F5BA2E") +
+  labs(title = "PFN Network 15 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 15 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_PFNs_PFN15_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- PFN_area_stats[16,2]/TCA_avg
+Fig <- ggplot(data = PNC_PFNs, aes(x = log(TC_area), y = log(PFN16_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#4E31A8") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#4E31A8") +
+  labs(title = "PFN Network 16 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 16 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_PFNs_PFN16_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+
+prop <- PFN_area_stats[17,2]/TCA_avg
+Fig <- ggplot(data = PNC_PFNs, aes(x = log(TC_area), y = log(PFN17_soft_parcel_normed))) +
+  geom_point(size = 3, alpha = 0.7, color = "#F5BA2E") +
+  geom_abline(intercept = log(prop), slope = 1, color = "#A9A9A9", linewidth = 1, alpha = 0.9) +
+  geom_smooth(method = "lm", color = "black", fill = "#F5BA2E") +
+  labs(title = "PFN Network 17 Scaling in PNC",
+       x = "log(Total Cortical Area)",
+       y = "log(Network 17 Area)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25, color = "black"),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  )
+Fig
+ggsave("../../Results/Area_stats/PNC_PFNs_PFN17_log_log_scatterplot.png",
+       width = 19, height = 16, dpi = 600, units = "cm")
+```
+
+## Get shared covariance of log(TC_area) beta across group atlas and PFN models via multivariate normal additive models (mvn)
+```{r}
+dout <- "../../Results/Area_stats"
+dir.create(dout)
+log_TCA_cov <- matrix(0,17,1)
+
+PNC_all <- merge(PNC_Group,PNC_PFNs,by="participant_id") # _Group = .x, _PFNs = .y
+
+Net1_mv_fit <- gam(
+  list(
+    log(PFN1_soft_parcel_normed.x)~log(TC_area.x)+sex.x+euler.x+median_fd_combined.x+s(age.x,k=4),
+    log(PFN1_soft_parcel_normed.y)~log(TC_area.y)+sex.y+euler.y+median_fd_combined.y+s(age.y,k=4)
+  ),
+  family = mvn(d = 2),  # multivariate normal response, 2 dimensions
+  data   = PNC_all
+)
+cov_mat_Net1 <- vcov(Net1_mv_fit)
+log_TCA_cov[1,] <- cov_mat_Net1[2,10]
+
+Net2_mv_fit <- gam(
+  list(
+    log(PFN2_soft_parcel_normed.x)~log(TC_area.x)+sex.x+euler.x+median_fd_combined.x+s(age.x,k=4),
+    log(PFN2_soft_parcel_normed.y)~log(TC_area.y)+sex.y+euler.y+median_fd_combined.y+s(age.y,k=4)
+  ),
+  family = mvn(d = 2),  # multivariate normal response, 2 dimensions
+  data   = PNC_all
+)
+cov_mat_Net2 <- vcov(Net2_mv_fit)
+log_TCA_cov[2,] <- cov_mat_Net2[2,10]
+
+Net3_mv_fit <- gam(
+  list(
+    log(PFN3_soft_parcel_normed.x)~log(TC_area.x)+sex.x+euler.x+median_fd_combined.x+s(age.x,k=4),
+    log(PFN3_soft_parcel_normed.y)~log(TC_area.y)+sex.y+euler.y+median_fd_combined.y+s(age.y,k=4)
+  ),
+  family = mvn(d = 2),  # multivariate normal response, 2 dimensions
+  data   = PNC_all
+)
+cov_mat_Net3 <- vcov(Net3_mv_fit)
+log_TCA_cov[3,] <- cov_mat_Net3[2,10]
+
+Net4_mv_fit <- gam(
+  list(
+    log(PFN4_soft_parcel_normed.x)~log(TC_area.x)+sex.x+euler.x+median_fd_combined.x+s(age.x,k=4),
+    log(PFN4_soft_parcel_normed.y)~log(TC_area.y)+sex.y+euler.y+median_fd_combined.y+s(age.y,k=4)
+  ),
+  family = mvn(d = 2),  # multivariate normal response, 2 dimensions
+  data   = PNC_all
+)
+cov_mat_Net4 <- vcov(Net4_mv_fit)
+log_TCA_cov[4,] <- cov_mat_Net4[2,10]
+
+Net5_mv_fit <- gam(
+  list(
+    log(PFN5_soft_parcel_normed.x)~log(TC_area.x)+sex.x+euler.x+median_fd_combined.x+s(age.x,k=4),
+    log(PFN5_soft_parcel_normed.y)~log(TC_area.y)+sex.y+euler.y+median_fd_combined.y+s(age.y,k=4)
+  ),
+  family = mvn(d = 2),  # multivariate normal response, 2 dimensions
+  data   = PNC_all
+)
+cov_mat_Net5 <- vcov(Net5_mv_fit)
+log_TCA_cov[5,] <- cov_mat_Net5[2,10]
+
+Net6_mv_fit <- gam(
+  list(
+    log(PFN6_soft_parcel_normed.x)~log(TC_area.x)+sex.x+euler.x+median_fd_combined.x+s(age.x,k=4),
+    log(PFN6_soft_parcel_normed.y)~log(TC_area.y)+sex.y+euler.y+median_fd_combined.y+s(age.y,k=4)
+  ),
+  family = mvn(d = 2),  # multivariate normal response, 2 dimensions
+  data   = PNC_all
+)
+cov_mat_Net6 <- vcov(Net6_mv_fit)
+log_TCA_cov[6,] <- cov_mat_Net6[2,10]
+
+Net7_mv_fit <- gam(
+  list(
+    log(PFN7_soft_parcel_normed.x)~log(TC_area.x)+sex.x+euler.x+median_fd_combined.x+s(age.x,k=4),
+    log(PFN7_soft_parcel_normed.y)~log(TC_area.y)+sex.y+euler.y+median_fd_combined.y+s(age.y,k=4)
+  ),
+  family = mvn(d = 2),  # multivariate normal response, 2 dimensions
+  data   = PNC_all
+)
+cov_mat_Net7 <- vcov(Net7_mv_fit)
+log_TCA_cov[7,] <- cov_mat_Net7[2,10]
+
+Net8_mv_fit <- gam(
+  list(
+    log(PFN8_soft_parcel_normed.x)~log(TC_area.x)+sex.x+euler.x+median_fd_combined.x+s(age.x,k=4),
+    log(PFN8_soft_parcel_normed.y)~log(TC_area.y)+sex.y+euler.y+median_fd_combined.y+s(age.y,k=4)
+  ),
+  family = mvn(d = 2),  # multivariate normal response, 2 dimensions
+  data   = PNC_all
+)
+cov_mat_Net8 <- vcov(Net8_mv_fit)
+log_TCA_cov[8,] <- cov_mat_Net8[2,10]
+
+Net9_mv_fit <- gam(
+  list(
+    log(PFN9_soft_parcel_normed.x)~log(TC_area.x)+sex.x+euler.x+median_fd_combined.x+s(age.x,k=4),
+    log(PFN9_soft_parcel_normed.y)~log(TC_area.y)+sex.y+euler.y+median_fd_combined.y+s(age.y,k=4)
+  ),
+  family = mvn(d = 2),  # multivariate normal response, 2 dimensions
+  data   = PNC_all
+)
+cov_mat_Net9 <- vcov(Net9_mv_fit)
+log_TCA_cov[9,] <- cov_mat_Net9[2,10]
+
+Net10_mv_fit <- gam(
+  list(
+    log(PFN10_soft_parcel_normed.x)~log(TC_area.x)+sex.x+euler.x+median_fd_combined.x+s(age.x,k=4),
+    log(PFN10_soft_parcel_normed.y)~log(TC_area.y)+sex.y+euler.y+median_fd_combined.y+s(age.y,k=4)
+  ),
+  family = mvn(d = 2),  # multivariate normal response, 2 dimensions
+  data   = PNC_all
+)
+cov_mat_Net10 <- vcov(Net10_mv_fit)
+log_TCA_cov[10,] <- cov_mat_Net10[2,10]
+
+Net11_mv_fit <- gam(
+  list(
+    log(PFN11_soft_parcel_normed.x)~log(TC_area.x)+sex.x+euler.x+median_fd_combined.x+s(age.x,k=4),
+    log(PFN11_soft_parcel_normed.y)~log(TC_area.y)+sex.y+euler.y+median_fd_combined.y+s(age.y,k=4)
+  ),
+  family = mvn(d = 2),  # multivariate normal response, 2 dimensions
+  data   = PNC_all
+)
+cov_mat_Net11 <- vcov(Net11_mv_fit)
+log_TCA_cov[11,] <- cov_mat_Net11[2,10]
+
+Net12_mv_fit <- gam(
+  list(
+    log(PFN12_soft_parcel_normed.x)~log(TC_area.x)+sex.x+euler.x+median_fd_combined.x+s(age.x,k=4),
+    log(PFN12_soft_parcel_normed.y)~log(TC_area.y)+sex.y+euler.y+median_fd_combined.y+s(age.y,k=4)
+  ),
+  family = mvn(d = 2),  # multivariate normal response, 2 dimensions
+  data   = PNC_all
+)
+cov_mat_Net12 <- vcov(Net12_mv_fit)
+log_TCA_cov[12,] <- cov_mat_Net12[2,10]
+
+Net13_mv_fit <- gam(
+  list(
+    log(PFN13_soft_parcel_normed.x)~log(TC_area.x)+sex.x+euler.x+median_fd_combined.x+s(age.x,k=4),
+    log(PFN13_soft_parcel_normed.y)~log(TC_area.y)+sex.y+euler.y+median_fd_combined.y+s(age.y,k=4)
+  ),
+  family = mvn(d = 2),  # multivariate normal response, 2 dimensions
+  data   = PNC_all
+)
+cov_mat_Net13 <- vcov(Net13_mv_fit)
+log_TCA_cov[13,] <- cov_mat_Net13[2,10]
+
+Net14_mv_fit <- gam(
+  list(
+    log(PFN14_soft_parcel_normed.x)~log(TC_area.x)+sex.x+euler.x+median_fd_combined.x+s(age.x,k=4),
+    log(PFN14_soft_parcel_normed.y)~log(TC_area.y)+sex.y+euler.y+median_fd_combined.y+s(age.y,k=4)
+  ),
+  family = mvn(d = 2),  # multivariate normal response, 2 dimensions
+  data   = PNC_all
+)
+cov_mat_Net14 <- vcov(Net14_mv_fit)
+log_TCA_cov[14,] <- cov_mat_Net14[2,10]
+
+Net15_mv_fit <- gam(
+  list(
+    log(PFN15_soft_parcel_normed.x)~log(TC_area.x)+sex.x+euler.x+median_fd_combined.x+s(age.x,k=4),
+    log(PFN15_soft_parcel_normed.y)~log(TC_area.y)+sex.y+euler.y+median_fd_combined.y+s(age.y,k=4)
+  ),
+  family = mvn(d = 2),  # multivariate normal response, 2 dimensions
+  data   = PNC_all
+)
+cov_mat_Net15 <- vcov(Net15_mv_fit)
+log_TCA_cov[15,] <- cov_mat_Net15[2,10]
+
+Net16_mv_fit <- gam(
+  list(
+    log(PFN16_soft_parcel_normed.x)~log(TC_area.x)+sex.x+euler.x+median_fd_combined.x+s(age.x,k=4),
+    log(PFN16_soft_parcel_normed.y)~log(TC_area.y)+sex.y+euler.y+median_fd_combined.y+s(age.y,k=4)
+  ),
+  family = mvn(d = 2),  # multivariate normal response, 2 dimensions
+  data   = PNC_all
+)
+cov_mat_Net16 <- vcov(Net16_mv_fit)
+log_TCA_cov[16,] <- cov_mat_Net16[2,10]
+
+Net17_mv_fit <- gam(
+  list(
+    log(PFN17_soft_parcel_normed.x)~log(TC_area.x)+sex.x+euler.x+median_fd_combined.x+s(age.x,k=4),
+    log(PFN17_soft_parcel_normed.y)~log(TC_area.y)+sex.y+euler.y+median_fd_combined.y+s(age.y,k=4)
+  ),
+  family = mvn(d = 2),  # multivariate normal response, 2 dimensions
+  data   = PNC_all
+)
+cov_mat_Net17 <- vcov(Net17_mv_fit)
+log_TCA_cov[17,] <- cov_mat_Net17[2,10]
+
+PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+log_TCA_beta_cov <- data.frame(Network = PFN_names, log_TC_area_beta_covariance = log_TCA_cov)
+
+write_csv(log_TCA_beta_cov,paste0(dout,"/PNC_covar_of_log_TCA_betas_group_vs_PFN_gams.csv"))
+```
+
+## Get shared covariance of log(TC_area) beta across group atlas and PFN models via multivariate normal additive models (mvn)
+```{r}
+dout <- "../../Results/Area_stats"
+dir.create(dout)
+
+Group_PFN1_gam<-gam(log(PFN1_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN2_gam<-gam(log(PFN2_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN3_gam<-gam(log(PFN3_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN4_gam<-gam(log(PFN4_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN5_gam<-gam(log(PFN5_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN6_gam<-gam(log(PFN6_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN7_gam<-gam(log(PFN7_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN8_gam<-gam(log(PFN8_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN9_gam<-gam(log(PFN9_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN10_gam<-gam(log(PFN10_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN11_gam<-gam(log(PFN11_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN12_gam<-gam(log(PFN12_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN13_gam<-gam(log(PFN13_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN14_gam<-gam(log(PFN14_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN15_gam<-gam(log(PFN15_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN16_gam<-gam(log(PFN16_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN17_gam<-gam(log(PFN17_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+
+PFN1_gam<-gam(log(PFN1_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN2_gam<-gam(log(PFN2_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN3_gam<-gam(log(PFN3_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN4_gam<-gam(log(PFN4_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN5_gam<-gam(log(PFN5_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN6_gam<-gam(log(PFN6_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN7_gam<-gam(log(PFN7_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN8_gam<-gam(log(PFN8_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN9_gam<-gam(log(PFN9_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN10_gam<-gam(log(PFN10_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN11_gam<-gam(log(PFN11_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN12_gam<-gam(log(PFN12_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN13_gam<-gam(log(PFN13_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN14_gam<-gam(log(PFN14_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN15_gam<-gam(log(PFN15_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN16_gam<-gam(log(PFN16_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN17_gam<-gam(log(PFN17_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+
+Group_v_PFN_beta_diff <- matrix(0,17,2)
+
+beta_PFN <- summary(PFN1_gam)$p.table["log(TC_area)", "Estimate"]
+beta_group <- summary(Group_PFN1_gam)$p.table["log(TC_area)", "Estimate"]
+SE_PFN <- summary(PFN1_gam)$p.table["log(TC_area)", "Std. Error"]
+SE_group <- summary(Group_PFN1_gam)$p.table["log(TC_area)", "Std. Error"]
+cov_betas <- log_TCA_beta_cov$log_TC_area_beta_covariance[1]
+SE <- sqrt(SE_PFN^2 + SE_group^2 - 2*cov_betas)
+beta_diff <- beta_PFN - beta_group
+t_val <- beta_diff / SE # Null is no difference b/w group scaling and PFN scaling
+Group_v_PFN_beta_diff[1,1] <- beta_diff
+Group_v_PFN_beta_diff[1,2] <- 2 * (1 - pnorm(abs(t_val)))
+
+beta_PFN <- summary(PFN2_gam)$p.table["log(TC_area)", "Estimate"]
+beta_group <- summary(Group_PFN2_gam)$p.table["log(TC_area)", "Estimate"]
+SE_PFN <- summary(PFN2_gam)$p.table["log(TC_area)", "Std. Error"]
+SE_group <- summary(Group_PFN2_gam)$p.table["log(TC_area)", "Std. Error"]
+cov_betas <- log_TCA_beta_cov$log_TC_area_beta_covariance[2]
+SE <- sqrt(SE_PFN^2 + SE_group^2 - 2*cov_betas)
+beta_diff <- beta_PFN - beta_group
+t_val <- beta_diff / SE # Null is no difference b/w group scaling and PFN scaling
+Group_v_PFN_beta_diff[2,1] <- beta_diff
+Group_v_PFN_beta_diff[2,2] <- 2 * (1 - pnorm(abs(t_val)))
+
+beta_PFN <- summary(PFN3_gam)$p.table["log(TC_area)", "Estimate"]
+beta_group <- summary(Group_PFN3_gam)$p.table["log(TC_area)", "Estimate"]
+SE_PFN <- summary(PFN3_gam)$p.table["log(TC_area)", "Std. Error"]
+SE_group <- summary(Group_PFN3_gam)$p.table["log(TC_area)", "Std. Error"]
+cov_betas <- log_TCA_beta_cov$log_TC_area_beta_covariance[3]
+SE <- sqrt(SE_PFN^2 + SE_group^2 - 2*cov_betas)
+beta_diff <- beta_PFN - beta_group
+t_val <- beta_diff / SE # Null is no difference b/w group scaling and PFN scaling
+Group_v_PFN_beta_diff[3,1] <- beta_diff
+Group_v_PFN_beta_diff[3,2] <- 2 * (1 - pnorm(abs(t_val)))
+
+beta_PFN <- summary(PFN4_gam)$p.table["log(TC_area)", "Estimate"]
+beta_group <- summary(Group_PFN4_gam)$p.table["log(TC_area)", "Estimate"]
+SE_PFN <- summary(PFN4_gam)$p.table["log(TC_area)", "Std. Error"]
+SE_group <- summary(Group_PFN4_gam)$p.table["log(TC_area)", "Std. Error"]
+cov_betas <- log_TCA_beta_cov$log_TC_area_beta_covariance[4]
+SE <- sqrt(SE_PFN^2 + SE_group^2 - 2*cov_betas)
+beta_diff <- beta_PFN - beta_group
+t_val <- beta_diff / SE # Null is no difference b/w group scaling and PFN scaling
+Group_v_PFN_beta_diff[4,1] <- beta_diff
+Group_v_PFN_beta_diff[4,2] <- 2 * (1 - pnorm(abs(t_val)))
+
+beta_PFN <- summary(PFN5_gam)$p.table["log(TC_area)", "Estimate"]
+beta_group <- summary(Group_PFN5_gam)$p.table["log(TC_area)", "Estimate"]
+SE_PFN <- summary(PFN5_gam)$p.table["log(TC_area)", "Std. Error"]
+SE_group <- summary(Group_PFN5_gam)$p.table["log(TC_area)", "Std. Error"]
+cov_betas <- log_TCA_beta_cov$log_TC_area_beta_covariance[5]
+SE <- sqrt(SE_PFN^2 + SE_group^2 - 2*cov_betas)
+beta_diff <- beta_PFN - beta_group
+t_val <- beta_diff / SE # Null is no difference b/w group scaling and PFN scaling
+Group_v_PFN_beta_diff[5,1] <- beta_diff
+Group_v_PFN_beta_diff[5,2] <- 2 * (1 - pnorm(abs(t_val)))
+
+beta_PFN <- summary(PFN6_gam)$p.table["log(TC_area)", "Estimate"]
+beta_group <- summary(Group_PFN6_gam)$p.table["log(TC_area)", "Estimate"]
+SE_PFN <- summary(PFN6_gam)$p.table["log(TC_area)", "Std. Error"]
+SE_group <- summary(Group_PFN6_gam)$p.table["log(TC_area)", "Std. Error"]
+cov_betas <- log_TCA_beta_cov$log_TC_area_beta_covariance[6]
+SE <- sqrt(SE_PFN^2 + SE_group^2 - 2*cov_betas)
+beta_diff <- beta_PFN - beta_group
+t_val <- beta_diff / SE # Null is no difference b/w group scaling and PFN scaling
+Group_v_PFN_beta_diff[6,1] <- beta_diff
+Group_v_PFN_beta_diff[6,2] <- 2 * (1 - pnorm(abs(t_val)))
+
+beta_PFN <- summary(PFN7_gam)$p.table["log(TC_area)", "Estimate"]
+beta_group <- summary(Group_PFN7_gam)$p.table["log(TC_area)", "Estimate"]
+SE_PFN <- summary(PFN7_gam)$p.table["log(TC_area)", "Std. Error"]
+SE_group <- summary(Group_PFN7_gam)$p.table["log(TC_area)", "Std. Error"]
+cov_betas <- log_TCA_beta_cov$log_TC_area_beta_covariance[7]
+SE <- sqrt(SE_PFN^2 + SE_group^2 - 2*cov_betas)
+beta_diff <- beta_PFN - beta_group
+t_val <- beta_diff / SE # Null is no difference b/w group scaling and PFN scaling
+Group_v_PFN_beta_diff[7,1] <- beta_diff
+Group_v_PFN_beta_diff[7,2] <- 2 * (1 - pnorm(abs(t_val)))
+
+beta_PFN <- summary(PFN8_gam)$p.table["log(TC_area)", "Estimate"]
+beta_group <- summary(Group_PFN8_gam)$p.table["log(TC_area)", "Estimate"]
+SE_PFN <- summary(PFN8_gam)$p.table["log(TC_area)", "Std. Error"]
+SE_group <- summary(Group_PFN8_gam)$p.table["log(TC_area)", "Std. Error"]
+cov_betas <- log_TCA_beta_cov$log_TC_area_beta_covariance[8]
+SE <- sqrt(SE_PFN^2 + SE_group^2 - 2*cov_betas)
+beta_diff <- beta_PFN - beta_group
+t_val <- beta_diff / SE # Null is no difference b/w group scaling and PFN scaling
+Group_v_PFN_beta_diff[8,1] <- beta_diff
+Group_v_PFN_beta_diff[8,2] <- 2 * (1 - pnorm(abs(t_val)))
+
+beta_PFN <- summary(PFN9_gam)$p.table["log(TC_area)", "Estimate"]
+beta_group <- summary(Group_PFN9_gam)$p.table["log(TC_area)", "Estimate"]
+SE_PFN <- summary(PFN9_gam)$p.table["log(TC_area)", "Std. Error"]
+SE_group <- summary(Group_PFN9_gam)$p.table["log(TC_area)", "Std. Error"]
+cov_betas <- log_TCA_beta_cov$log_TC_area_beta_covariance[9]
+SE <- sqrt(SE_PFN^2 + SE_group^2 - 2*cov_betas)
+beta_diff <- beta_PFN - beta_group
+t_val <- beta_diff / SE # Null is no difference b/w group scaling and PFN scaling
+Group_v_PFN_beta_diff[9,1] <- beta_diff
+Group_v_PFN_beta_diff[9,2] <- 2 * (1 - pnorm(abs(t_val)))
+
+beta_PFN <- summary(PFN10_gam)$p.table["log(TC_area)", "Estimate"]
+beta_group <- summary(Group_PFN10_gam)$p.table["log(TC_area)", "Estimate"]
+SE_PFN <- summary(PFN10_gam)$p.table["log(TC_area)", "Std. Error"]
+SE_group <- summary(Group_PFN10_gam)$p.table["log(TC_area)", "Std. Error"]
+cov_betas <- log_TCA_beta_cov$log_TC_area_beta_covariance[10]
+SE <- sqrt(SE_PFN^2 + SE_group^2 - 2*cov_betas)
+beta_diff <- beta_PFN - beta_group
+t_val <- beta_diff / SE # Null is no difference b/w group scaling and PFN scaling
+Group_v_PFN_beta_diff[10,1] <- beta_diff
+Group_v_PFN_beta_diff[10,2] <- 2 * (1 - pnorm(abs(t_val)))
+
+beta_PFN <- summary(PFN11_gam)$p.table["log(TC_area)", "Estimate"]
+beta_group <- summary(Group_PFN11_gam)$p.table["log(TC_area)", "Estimate"]
+SE_PFN <- summary(PFN11_gam)$p.table["log(TC_area)", "Std. Error"]
+SE_group <- summary(Group_PFN11_gam)$p.table["log(TC_area)", "Std. Error"]
+cov_betas <- log_TCA_beta_cov$log_TC_area_beta_covariance[11]
+SE <- sqrt(SE_PFN^2 + SE_group^2 - 2*cov_betas)
+beta_diff <- beta_PFN - beta_group
+t_val <- beta_diff / SE # Null is no difference b/w group scaling and PFN scaling
+Group_v_PFN_beta_diff[11,1] <- beta_diff
+Group_v_PFN_beta_diff[11,2] <- 2 * (1 - pnorm(abs(t_val)))
+
+beta_PFN <- summary(PFN12_gam)$p.table["log(TC_area)", "Estimate"]
+beta_group <- summary(Group_PFN12_gam)$p.table["log(TC_area)", "Estimate"]
+SE_PFN <- summary(PFN12_gam)$p.table["log(TC_area)", "Std. Error"]
+SE_group <- summary(Group_PFN12_gam)$p.table["log(TC_area)", "Std. Error"]
+cov_betas <- log_TCA_beta_cov$log_TC_area_beta_covariance[12]
+SE <- sqrt(SE_PFN^2 + SE_group^2 - 2*cov_betas)
+beta_diff <- beta_PFN - beta_group
+t_val <- beta_diff / SE # Null is no difference b/w group scaling and PFN scaling
+Group_v_PFN_beta_diff[12,1] <- beta_diff
+Group_v_PFN_beta_diff[12,2] <- 2 * (1 - pnorm(abs(t_val)))
+
+beta_PFN <- summary(PFN13_gam)$p.table["log(TC_area)", "Estimate"]
+beta_group <- summary(Group_PFN13_gam)$p.table["log(TC_area)", "Estimate"]
+SE_PFN <- summary(PFN13_gam)$p.table["log(TC_area)", "Std. Error"]
+SE_group <- summary(Group_PFN13_gam)$p.table["log(TC_area)", "Std. Error"]
+cov_betas <- log_TCA_beta_cov$log_TC_area_beta_covariance[13]
+SE <- sqrt(SE_PFN^2 + SE_group^2 - 2*cov_betas)
+beta_diff <- beta_PFN - beta_group
+t_val <- beta_diff / SE # Null is no difference b/w group scaling and PFN scaling
+Group_v_PFN_beta_diff[13,1] <- beta_diff
+Group_v_PFN_beta_diff[13,2] <- 2 * (1 - pnorm(abs(t_val)))
+
+beta_PFN <- summary(PFN14_gam)$p.table["log(TC_area)", "Estimate"]
+beta_group <- summary(Group_PFN14_gam)$p.table["log(TC_area)", "Estimate"]
+SE_PFN <- summary(PFN14_gam)$p.table["log(TC_area)", "Std. Error"]
+SE_group <- summary(Group_PFN14_gam)$p.table["log(TC_area)", "Std. Error"]
+cov_betas <- log_TCA_beta_cov$log_TC_area_beta_covariance[14]
+SE <- sqrt(SE_PFN^2 + SE_group^2 - 2*cov_betas)
+beta_diff <- beta_PFN - beta_group
+t_val <- beta_diff / SE # Null is no difference b/w group scaling and PFN scaling
+Group_v_PFN_beta_diff[14,1] <- beta_diff
+Group_v_PFN_beta_diff[14,2] <- 2 * (1 - pnorm(abs(t_val)))
+
+beta_PFN <- summary(PFN15_gam)$p.table["log(TC_area)", "Estimate"]
+beta_group <- summary(Group_PFN15_gam)$p.table["log(TC_area)", "Estimate"]
+SE_PFN <- summary(PFN15_gam)$p.table["log(TC_area)", "Std. Error"]
+SE_group <- summary(Group_PFN15_gam)$p.table["log(TC_area)", "Std. Error"]
+cov_betas <- log_TCA_beta_cov$log_TC_area_beta_covariance[15]
+SE <- sqrt(SE_PFN^2 + SE_group^2 - 2*cov_betas)
+beta_diff <- beta_PFN - beta_group
+t_val <- beta_diff / SE # Null is no difference b/w group scaling and PFN scaling
+Group_v_PFN_beta_diff[15,1] <- beta_diff
+Group_v_PFN_beta_diff[15,2] <- 2 * (1 - pnorm(abs(t_val)))
+
+beta_PFN <- summary(PFN16_gam)$p.table["log(TC_area)", "Estimate"]
+beta_group <- summary(Group_PFN16_gam)$p.table["log(TC_area)", "Estimate"]
+SE_PFN <- summary(PFN16_gam)$p.table["log(TC_area)", "Std. Error"]
+SE_group <- summary(Group_PFN16_gam)$p.table["log(TC_area)", "Std. Error"]
+cov_betas <- log_TCA_beta_cov$log_TC_area_beta_covariance[16]
+SE <- sqrt(SE_PFN^2 + SE_group^2 - 2*cov_betas)
+beta_diff <- beta_PFN - beta_group
+t_val <- beta_diff / SE # Null is no difference b/w group scaling and PFN scaling
+Group_v_PFN_beta_diff[16,1] <- beta_diff
+Group_v_PFN_beta_diff[16,2] <- 2 * (1 - pnorm(abs(t_val)))
+
+beta_PFN <- summary(PFN17_gam)$p.table["log(TC_area)", "Estimate"]
+beta_group <- summary(Group_PFN17_gam)$p.table["log(TC_area)", "Estimate"]
+SE_PFN <- summary(PFN17_gam)$p.table["log(TC_area)", "Std. Error"]
+SE_group <- summary(Group_PFN17_gam)$p.table["log(TC_area)", "Std. Error"]
+cov_betas <- log_TCA_beta_cov$log_TC_area_beta_covariance[17]
+SE <- sqrt(SE_PFN^2 + SE_group^2 - 2*cov_betas)
+beta_diff <- beta_PFN - beta_group
+t_val <- beta_diff / SE # Null is no difference b/w group scaling and PFN scaling
+Group_v_PFN_beta_diff[17,1] <- beta_diff
+Group_v_PFN_beta_diff[17,2] <- 2 * (1 - pnorm(abs(t_val)))
+
+pvals_fdr <- p.adjust(Group_v_PFN_beta_diff[,2], method = "fdr")
+PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+Group_v_PFN_beta_diff_fdr <-  data.frame(PFN = PFN_names, beta = Group_v_PFN_beta_diff[,1], pvals_fdr = pvals_fdr)
+
+write_csv(Group_v_PFN_beta_diff_fdr,paste0(dout,"/PNC_Group_vs_PFN_scaling_beta_diff_results.csv"))
+```
+
+
+### Bar plot of scaling (no age term):
+```{r}
+p_vec_adj<- Group_v_PFN_beta_diff_fdr[,3]
+print(p_vec_adj)
+keep_p <- ifelse(p_vec_adj<.05,1,0)
+print(keep_p)
+
+delta_beta <- Group_v_PFN_beta_diff_fdr[,2]
+sorted_delta_beta = rank(delta_beta);
+pfn_inAscend <- c()
+for (t in c(1:17)) { pfn_inAscend <- append(pfn_inAscend,which(sorted_delta_beta == t))}
+
+# Using 7 colors scheme for bar plot
+data <- data.frame(EffectSizes = as.numeric(delta_beta)) 
+data$EffectRank <- as.numeric(sorted_delta_beta)
+# BorderColor1 is for colors of 1-17 network numbers(to lable the network numbers in a 1-17 order)
+BorderColor1 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E");
+				 
+# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN. ("black" is filled with black)
+BorderColor2 <- c("#E76178", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                 "#FFFFFF", "#FFFFFF", "#E76178", "#E443FF", "#FFFFFF",
+                 "#FFFFFF", "#FFFFFF", "#FFFFFF", "#00A131", "#F5BA2E", 
+                 "#FFFFFF", "#F5BA2E");
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend]
+BorderColor3 <- BorderColor2[pfn_inAscend]
+
+# the line type for the 1-17 network bars (in a 1-17 order).  If a dashed line is needed for a bar, please change the value to "dashed".
+LineType <- c("solid", "dashed", "dashed", "dashed", "dashed",
+              "dashed", "dashed", "solid", "solid", "dashed",
+              "dashed", "dashed", "dashed", "solid", "solid",
+              "dashed", "solid");
+
+Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
+  geom_bar(stat = "identity", fill=BorderColor3[sorted_delta_beta], 
+           colour = BorderColor[sorted_delta_beta], linetype = LineType, width = 0.8) + 
+  labs(title = "PFN vs Group Atlas Scaling in PNC", x = "Networks", y = paste0("Δ in Cortical Scaling β, PFN - Group")) + theme_classic() +
+  theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
+  theme(axis.text.x = ggtext::element_markdown(size= 25, color = BorderColor), 
+        axis.text.y = ggtext::element_markdown(size= 25, color = "black"), 
+        axis.title=ggtext::element_markdown(size = 25)) +
+  theme(axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1)) +
+  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_delta_beta))
+Fig
+ggsave(paste0("../../Results/Area_stats/PNC_Group_vs_PFN_scaling_beta_diff_plot.png"), width = 19, height = 16, dpi = 600, units = "cm")
+```

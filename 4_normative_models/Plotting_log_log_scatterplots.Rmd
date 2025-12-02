@@ -1,0 +1,540 @@
+---
+title: "log_log_PNC_group_normative"
+author: "Kevin Sun"
+date: "`10/31/2025`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(gifti)
+library(RNifti)
+library(ciftiTools)
+ciftiTools.setOption('wb_path', '/workbench')
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(sjPlot)
+library(mgcv)
+```
+
+#Import areas and demographics
+```{r}
+PNC_TC_and_group_network_areas <- read.csv("../../Inputs/summary.csv") # n = 1598
+colnames(PNC_TC_and_group_network_areas)[1] <- "participant_id"
+
+PNC_TC_and_PFNs_network_areas <- read.csv("../../Inputs/summary_PFNs.csv") # n = 1482
+colnames(PNC_TC_and_PFNs_network_areas)[1] <- "participant_id"
+colnames(PNC_TC_and_PFNs_network_areas)[3] <- "PFN1_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[4] <- "PFN2_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[5] <- "PFN3_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[6] <- "PFN4_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[7] <- "PFN5_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[8] <- "PFN6_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[9] <- "PFN7_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[10] <- "PFN8_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[11] <- "PFN9_soft_parcel_normed"
+
+PNC_demos <- read.csv("../../Inputs/filtered_demo_PNC.csv") #n = 1332
+
+PNC_Group <- merge(PNC_TC_and_group_network_areas,PNC_demos,by="participant_id") # n = 1332
+PNC_PFNs <- merge(PNC_TC_and_PFNs_network_areas,PNC_demos,by="participant_id") # n = 1332
+
+#Check equivalence of TC areas
+TC_area_equivalence <- identical(PNC_Group$TC_area, PNC_PFNs$TC_area)
+
+```
+
+## raw plot to visualize power law allometry for PFNs based on reduced log-log models
+```{r}
+dout <- "../../Results/Scatterplots/PNC_PFN_power_laws/No_cov_models"
+dir.create(dout)
+
+reduced_log_log_results <- matrix(0,17,2)
+net_colors <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                "#4E31A8", "#F5BA2E")
+
+for (net in c(1:17)) {
+  net_y_var <- paste0("PFN",net,"_soft_parcel_normed")
+  net_power_law_model <- lm(log(get(net_y_var)) ~ log(TC_area), data = PNC_PFNs)
+  print(tab_model(net_power_law_model,pred.labels = c("Intercept","log TC Area"),dv.labels=c(paste0("log PFN",net)),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/PNC_PFNs_PFN",net,"_log_log_reduced_lm.doc")))
+  
+  k_estimate <- coef(net_power_law_model)[2]  # get parameters for power law
+  a_estimate <- exp(coef(net_power_law_model)[1])
+  
+  reduced_log_log_results[net,1] <- k_estimate
+  reduced_log_log_results[net,2] <- a_estimate
+  
+  lm_iso <- lm(log(get(net_y_var)) ~ 1 + offset(log(TC_area)), data = PNC_PFNs) #fit isometric log-log model to estimate alpha
+  iso_alpha <- exp(lm_iso$coefficients[1]) 
+  
+  #prop <- PFN_area_stats[net,2]/TCA_avg
+  Fig <- ggplot(data = PNC_PFNs, aes(x = TC_area, y = get(net_y_var))) +
+    geom_point(size = 2, alpha = 0.4, color = net_colors[net]) +
+    geom_abline(intercept = 0, slope = iso_alpha, color = "#474747", linewidth = 0.75, alpha = 0.9, , linetype = "longdash") +
+    stat_function(fun = function(x) a_estimate*x^k_estimate,  # power law as defined by y = a *x^k
+                  color = net_colors[net], linewidth = 1.2, alpha = 0.8) +
+    labs(title = paste0("PFN Network ",net," Scaling in PNC"),
+           x = expression("Total Cortical Area ("~mm^{2}~")"),
+           y = bquote("Network " * .(net) * " Area ("~mm^2~")")) +
+    theme_classic() +
+    theme(
+      plot.title = element_text(size = 25, hjust = 0.5),
+      axis.text.x = element_text(size = 25, color = "black"),
+      axis.text.y = element_text(size = 25, color = "black"),
+      axis.title  = element_text(size = 25)
+    )
+  print(Fig)
+  ggsave(paste0(dout,"/PNC_PFNs_PFN",net,"_power_law_scatterplot.png"), width = 19, height = 16, dpi = 600, units = "cm")
+}
+
+PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+PNC_PFNs_reduced_log_log_results <- data.frame(Network = PFN_names, beta = reduced_log_log_results[,1], alpha = reduced_log_log_results[,2])
+write_csv(PNC_PFNs_reduced_log_log_results,paste0(dout,"/PNC_PFNs_reduced_log_log_summary.csv"))
+```
+
+## Fit models for PFNs and group atlas
+```{r}
+Group_PFN1_gam<-gam(log(PFN1_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN2_gam<-gam(log(PFN2_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN3_gam<-gam(log(PFN3_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN4_gam<-gam(log(PFN4_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN5_gam<-gam(log(PFN5_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN6_gam<-gam(log(PFN6_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN7_gam<-gam(log(PFN7_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN8_gam<-gam(log(PFN8_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN9_gam<-gam(log(PFN9_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN10_gam<-gam(log(PFN10_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN11_gam<-gam(log(PFN11_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN12_gam<-gam(log(PFN12_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN13_gam<-gam(log(PFN13_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN14_gam<-gam(log(PFN14_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN15_gam<-gam(log(PFN15_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN16_gam<-gam(log(PFN16_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+Group_PFN17_gam<-gam(log(PFN17_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_Group)
+
+PFN1_gam<-gam(log(PFN1_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN2_gam<-gam(log(PFN2_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN3_gam<-gam(log(PFN3_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN4_gam<-gam(log(PFN4_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN5_gam<-gam(log(PFN5_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN6_gam<-gam(log(PFN6_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN7_gam<-gam(log(PFN7_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN8_gam<-gam(log(PFN8_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN9_gam<-gam(log(PFN9_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN10_gam<-gam(log(PFN10_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN11_gam<-gam(log(PFN11_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN12_gam<-gam(log(PFN12_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN13_gam<-gam(log(PFN13_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN14_gam<-gam(log(PFN14_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN15_gam<-gam(log(PFN15_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN16_gam<-gam(log(PFN16_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+PFN17_gam<-gam(log(PFN17_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_PFNs)
+```
+
+## --- PFNs --- ##
+## --- raw --- ##
+## Plot model-adjusted predictions on raw scale to show power law for PFNs- anchored isometry line
+```{r}
+dout <- "../../Results/Scatterplots/PNC_PFN_power_laws"
+dir.create(dout)
+library(ggeffects)
+
+net_colors <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                "#4E31A8", "#F5BA2E")
+
+for (net in c(1:17)) {
+  adj_net_area_pred <- ggpredict(get(paste0("PFN",net,"_gam")), terms = "TC_area", typical = "mean") #get adjusted prediction
+  net_y_var <- paste0("PFN",net,"_soft_parcel_normed")
+  #lm_iso <- lm(log(get(net_y_var)) ~ 1 + offset(log(TC_area)), data = PNC_PFNs) #fit isometric log-log model to estimate alpha
+  #a_prop <- exp(lm_iso$coefficients[1]) 
+  
+  TC_min <- min(adj_net_area_pred$x) # min TC area value in dataset
+  net_0 <- adj_net_area_pred$predicted[adj_net_area_pred$x == TC_min]
+  a_0 <- net_0/TC_min #get model-predicted proportion (cov-controlled) at minimum TC area
+  
+  Fig <- ggplot(adj_net_area_pred, aes(x = x, y = predicted)) +
+    geom_point(data = PNC_PFNs, aes(x = TC_area, y = get(net_y_var)), size = 2, alpha = 0.4, color = net_colors[net]) +
+    geom_abline(intercept = 0, slope = a_0, color = "#474747", linewidth = 0.75, alpha = 0.9, , linetype = "longdash") + # isometry line
+    #geom_ribbon(aes(ymin = conf.low, ymax = conf.high), fill = net_colors[net], alpha = 0.4) + # CI not interpretable on raw scale
+    geom_line(color = net_colors[net], linewidth = 1.2) + #line based on adjusted prediction
+    labs(title = paste0("PFN Network ",net," Scaling in PNC"),
+           x = expression("Total Cortical Area ("~mm^{2}~")"),
+           y = bquote("Network " * .(net) * " Area ("~mm^2~")")) +
+    theme_classic() +
+    theme(
+        plot.title = element_text(size = 25, hjust = 0.5),
+        axis.text.x = element_text(size = 25, color = "black"),
+        axis.text.y = element_text(size = 25, color = "black"),
+        axis.title  = element_text(size = 25)
+    )
+  print(Fig)
+  ggsave(paste0(dout,"/PNC_PFNs_PFN",net,"_adj_raw_scatterplot_anchored.png"), width = 19, height = 16, dpi = 600, units = "cm")
+}
+```
+
+## --- PFNs --- ##
+## --- log-log --- ##
+## Plot model-adjusted predictions on log-log scale (includes CIs) for PFNs- anchored isometry line + diag
+```{r}
+dout <- "../../Results/Scatterplots/PNC_PFN_power_laws"
+dir.create(dout)
+library(ggeffects)
+
+net_colors <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                "#4E31A8", "#F5BA2E")
+
+
+for (net in c(1:17)) {
+  adj_net_area_pred <- ggpredict(get(paste0("PFN",net,"_gam")), terms = "TC_area", typical = "mean") #get adjusted prediction
+  net_y_var <- paste0("PFN",net,"_soft_parcel_normed")
+  #lm_iso <- lm(log(get(net_y_var)) ~ 1 + offset(log(TC_area)), data = PNC_PFNs) #fit isometric log-log model to estimate alpha
+  #intercept <- lm_iso$coefficients[1]
+  
+  TC_min <- min(adj_net_area_pred$x) # min TC area value in dataset
+  net_0 <- adj_net_area_pred$predicted[adj_net_area_pred$x == TC_min]
+  a_0 <- net_0/TC_min #get model-predicted proportion (cov-controlled) at minimum TC area
+  intercept_0 <- log(a_0)
+  
+  y_min <- min(log(PNC_PFNs[net_y_var]))
+  y_max <- max(log(PNC_PFNs[net_y_var]))
+
+  x_min <- y_min - intercept_0 #setting axes limits to get standardized angle of isometric line
+  x_max <- y_max - intercept_0
+  
+  Fig <- ggplot(adj_net_area_pred, aes(x = log(x), y = log(predicted))) +
+    geom_point(data = PNC_PFNs, aes(x = log(TC_area), y = log(get(net_y_var))), size = 1, alpha = 0.4, color = net_colors[net]) +
+    geom_abline(intercept = intercept_0, slope = 1, color = "#474747", linewidth = 0.75, alpha = 0.9, linetype = "longdash") + # isometry line
+    geom_ribbon(aes(ymin = log(conf.low), ymax = log(conf.high)), fill = net_colors[net], alpha = 0.4) +
+    geom_line() + #line based on adjusted prediction
+    labs(title = paste0("PFN Network ",net," Scaling in PNC"),
+           x = "log(Total Cortical Area)",
+           y = paste0("log(Network ",net," Area)")) +
+    theme_classic() +
+    theme(
+        plot.title = element_text(size = 25, hjust = 0.5),
+        axis.text.x = element_text(size = 25, color = "black"),
+        axis.text.y = element_text(size = 25, color = "black"),
+        axis.title.x  = element_text(size = 25, margin = margin(t = 10)),
+        axis.title.y  = element_text(size = 25, margin = margin(r = 10))
+    ) +
+    coord_cartesian(xlim = c(x_min, x_max), ylim = c(y_min, y_max), clip = "off") + # set axes limits to get isometry line at diagonal
+    scale_x_continuous(breaks = c(11.5, 11.75, 12, 12.25, 12.5, 12.75)) +
+    theme(plot.margin = margin(20, 20, 20, 20))
+  print(Fig)
+  ggsave(paste0(dout,"/PNC_PFNs_PFN",net,"_adj_log_log_scatterplot_isometric_diag_anchored.png"), width = 19, height = 16, dpi = 600, units = "cm")
+}
+```
+
+## --- Group --- ##
+## --- raw --- ##
+## Plot model-adjusted predictions on raw scale to show power law for group atlas- anchored isometry line
+```{r}
+dout <- "../../Results/Scatterplots/PNC_Group_power_laws"
+dir.create(dout)
+library(ggeffects)
+
+net_colors <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                "#4E31A8", "#F5BA2E")
+
+for (net in c(1:17)) {
+  adj_net_area_pred <- ggpredict(get(paste0("Group_PFN",net,"_gam")), terms = "TC_area", typical = "mean") #get adjusted prediction
+  net_y_var <- paste0("PFN",net,"_soft_parcel_normed")
+  #lm_iso <- lm(log(get(net_y_var)) ~ 1 + offset(log(TC_area)), data = PNC_Group) #fit isometric log-log model to estimate alpha
+  #a_prop <- exp(lm_iso$coefficients[1]) 
+  
+  TC_min <- min(adj_net_area_pred$x) # min TC area value in dataset
+  net_0 <- adj_net_area_pred$predicted[adj_net_area_pred$x == TC_min]
+  a_0 <- net_0/TC_min #get model-predicted proportion (cov-controlled) at minimum TC area
+  
+  Fig <- ggplot(adj_net_area_pred, aes(x = x, y = predicted)) +
+    geom_point(data = PNC_Group, aes(x = TC_area, y = get(net_y_var)), size = 2, alpha = 0.4, color = net_colors[net]) +
+    geom_abline(intercept = 0, slope = a_0, color = "#474747", linewidth = 0.75, alpha = 0.9, , linetype = "longdash") + # isometry line
+    #geom_ribbon(aes(ymin = conf.low, ymax = conf.high), fill = net_colors[net], alpha = 0.4) + # CI not interpretable on raw scale
+    geom_line(color = net_colors[net], linewidth = 1.2) + #line based on adjusted prediction
+    labs(title = paste0("Group Atlas Network ",net," Scaling in PNC"),
+           x = expression("Total Cortical Area ("~mm^{2}~")"),
+           y = bquote("Network " * .(net) * " Area ("~mm^2~")")) +
+    theme_classic() +
+    theme(
+        plot.title = element_text(size = 25, hjust = 0.5),
+        axis.text.x = element_text(size = 25, color = "black"),
+        axis.text.y = element_text(size = 25, color = "black"),
+        axis.title  = element_text(size = 25)
+    )
+  print(Fig)
+  ggsave(paste0(dout,"/PNC_Group_PFN",net,"_adj_raw_scatterplot_anchored.png"), width = 19, height = 16, dpi = 600, units = "cm")
+}
+```
+
+## --- Group --- ##
+## --- log-log --- ##
+## Plot model-adjusted predictions on log-log scale (includes CIs) for group atlas- anchored isometry line + diag
+```{r}
+dout <- "../../Results/Scatterplots/PNC_Group_power_laws"
+dir.create(dout)
+library(ggeffects)
+
+net_colors <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                "#4E31A8", "#F5BA2E")
+
+
+for (net in c(1:17)) {
+  adj_net_area_pred <- ggpredict(get(paste0("Group_PFN",net,"_gam")), terms = "TC_area", typical = "mean") #get adjusted prediction
+  net_y_var <- paste0("PFN",net,"_soft_parcel_normed")
+  #lm_iso <- lm(log(get(net_y_var)) ~ 1 + offset(log(TC_area)), data = PNC_Group) #fit isometric log-log model to estimate alpha
+  #intercept <- lm_iso$coefficients[1]
+  
+  TC_min <- min(adj_net_area_pred$x) # min TC area value in dataset
+  net_0 <- adj_net_area_pred$predicted[adj_net_area_pred$x == TC_min]
+  a_0 <- net_0/TC_min #get model-predicted proportion (cov-controlled) at minimum TC area
+  intercept_0 <- log(a_0)
+  
+  y_min <- min(log(PNC_Group[net_y_var]))
+  y_max <- max(log(PNC_Group[net_y_var]))
+
+  x_min <- y_min - intercept_0 #setting axes limits to get standardized angle of isometric line
+  x_max <- y_max - intercept_0
+  
+  Fig <- ggplot(adj_net_area_pred, aes(x = log(x), y = log(predicted))) +
+    geom_point(data = PNC_Group, aes(x = log(TC_area), y = log(get(net_y_var))), size = 1, alpha = 0.4, color = net_colors[net]) +
+    geom_abline(intercept = intercept_0, slope = 1, color = "#474747", linewidth = 0.75, alpha = 0.9, linetype = "longdash") + # isometry line
+    geom_ribbon(aes(ymin = log(conf.low), ymax = log(conf.high)), fill = net_colors[net], alpha = 0.4) +
+    geom_line() + #line based on adjusted prediction
+    labs(title = paste0("Group Atlas Network ",net," Scaling in PNC"),
+           x = "log(Total Cortical Area)",
+           y = paste0("log(Network ",net," Area)")) +
+    theme_classic() +
+    theme(
+        plot.title = element_text(size = 25, hjust = 0.5),
+        axis.text.x = element_text(size = 25, color = "black"),
+        axis.text.y = element_text(size = 25, color = "black"),
+        axis.title.x  = element_text(size = 25, margin = margin(t = 10)),
+        axis.title.y  = element_text(size = 25, margin = margin(r = 10))
+    ) +
+    coord_cartesian(xlim = c(x_min, x_max), ylim = c(y_min, y_max), clip = "off") + # set axes limits to get isometry line at diagonal
+    scale_x_continuous(breaks = c(11.5, 11.75, 12, 12.25, 12.5, 12.75)) +
+    theme(plot.margin = margin(20, 20, 20, 20))
+  print(Fig)
+  ggsave(paste0(dout,"/PNC_Group_PFN",net,"_adj_log_log_scatterplot_isometric_diag_anchored.png"), width = 19, height = 16, dpi = 600, units = "cm")
+}
+```
+
+## --- PFNs vs Group --- ##
+## --- raw --- ##
+## Plot model-adjusted predictions on raw scale to show power law for PFNs vs group atlas
+```{r}
+dout <- "../../Results/Scatterplots/Compare_plots"
+dir.create(dout)
+library(ggeffects)
+
+net_colors <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                "#4E31A8", "#F5BA2E")
+
+for (net in c(1:17)) {
+  adj_net_area_pred <- ggpredict(get(paste0("PFN",net,"_gam")), terms = "TC_area", typical = "mean") #get adjusted prediction
+  group_adj_net_area_pred <- ggpredict(get(paste0("Group_PFN",net,"_gam")), terms = "TC_area", typical = "mean") #get adjusted prediction
+  net_y_var <- paste0("PFN",net,"_soft_parcel_normed")
+  
+  Fig <- ggplot(adj_net_area_pred, aes(x = x, y = predicted)) +
+    geom_point(data = PNC_Group, aes(x = TC_area, y = get(net_y_var)), size = 2, alpha = 0.4, color = "#474747", shape = 17) +
+    geom_point(data = PNC_PFNs, aes(x = TC_area, y = get(net_y_var)), size = 2, alpha = 0.4, color = net_colors[net]) +
+    geom_line(data = group_adj_net_area_pred, aes(x = x, y = predicted), color = "#474747") + 
+    geom_line(color = net_colors[net], linewidth = 1.2) + #line based on adjusted prediction
+    labs(title = paste0("Group vs PFN Network ",net," Scaling, PNC"),
+           x = expression("Total Cortical Area ("~mm^{2}~")"),
+           y = bquote("Network " * .(net) * " Area ("~mm^2~")")) +
+    theme_classic() +
+    theme(
+        plot.title = element_text(size = 25, hjust = 0.5),
+        axis.text.x = element_text(size = 25, color = "black"),
+        axis.text.y = element_text(size = 25, color = "black"),
+        axis.title  = element_text(size = 25)
+    )
+  print(Fig)
+  ggsave(paste0(dout,"/PNC_PFNs_v_Group_PFN",net,"_adj_raw_scatterplot.png"), width = 19, height = 16, dpi = 600, units = "cm")
+}
+```
+
+## --- PFNs vs Group --- ##
+## --- log-log --- ##
+## Plot model-adjusted predictions on log-log scale (includes CIs) to show power law for PFNs vs group atlas- anchored isometry line + anchored plots + diag
+```{r}
+dout <- "../../Results/Scatterplots/Compare_plots"
+dir.create(dout)
+library(ggeffects)
+
+net_colors <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                "#4E31A8", "#F5BA2E")
+
+for (net in c(1:17)) {
+  net_y_var <- paste0("PFN",net,"_soft_parcel_normed")
+  #lm_iso <- lm(log(get(net_y_var)) ~ 1 + offset(log(TC_area)), data = PNC_PFNs) #fit isometric log-log model to estimate alpha
+  #intercept <- lm_iso$coefficients[1]
+  
+  PFN_adj_net_area_pred <- ggpredict(get(paste0("PFN",net,"_gam")), terms = "TC_area", typical = "mean") #get adjusted prediction
+  group_adj_net_area_pred <- ggpredict(get(paste0("Group_PFN",net,"_gam")), terms = "TC_area", typical = "mean") #get adjusted prediction
+  
+  #PFN anchored isometry a_0
+  PFN_TC_min <- min(PFN_adj_net_area_pred$x) # min TC area value in dataset
+  PFN_net_0 <- PFN_adj_net_area_pred$predicted[PFN_adj_net_area_pred$x == PFN_TC_min]
+  PFN_a_0 <- PFN_net_0/PFN_TC_min #get model-predicted proportion (cov-controlled) at minimum TC area
+  PFN_intercept_0 <- log(PFN_a_0)
+  
+  #Group atlas anchored isometry a_0
+  group_TC_min <- min(group_adj_net_area_pred$x) # min TC area value in dataset
+  group_net_0 <- group_adj_net_area_pred$predicted[group_adj_net_area_pred$x == group_TC_min]
+  group_a_0 <- group_net_0/group_TC_min #get model-predicted proportion (cov-controlled) at minimum TC area
+  group_intercept_0 <- log(group_a_0)
+  
+  joint_intercept_0 <- mean(c(PFN_intercept_0,group_intercept_0)) #get joint isometry line as average of a_0's
+
+  # Centering PFN and Group predictions, CI's, and actual data to joint isometry line
+  intercept_center_adj <- abs(PFN_intercept_0 - group_intercept_0)/2
+  
+  #define data to be centered
+  PFN_iso_centered_pred <- PFN_adj_net_area_pred
+  PNC_PFNs_centered <- PNC_PFNs[,c("TC_area",net_y_var)]
+  group_iso_centered_pred <- group_adj_net_area_pred
+  PNC_Group_centered <- PNC_Group[,c("TC_area",net_y_var)]
+  
+  # +/- depends on which intercept_0 was higher - CENTERED VALUES ARE IN LOG SPACE
+  if (PFN_intercept_0 > group_intercept_0) {
+    PFN_iso_centered_pred[,c("predicted","conf.low","conf.high")] <-   log(PFN_adj_net_area_pred[,c("predicted","conf.low","conf.high")]) - intercept_center_adj
+    PNC_PFNs_centered[,net_y_var] <- log(PNC_PFNs[,net_y_var]) - intercept_center_adj
+    group_iso_centered_pred[,c("predicted","conf.low","conf.high")] <- log(group_adj_net_area_pred[,c("predicted","conf.low","conf.high")]) + intercept_center_adj
+    PNC_Group_centered[,net_y_var] <- log(PNC_Group[,net_y_var]) + intercept_center_adj
+    
+  } else {
+    PFN_iso_centered_pred[,c("predicted","conf.low","conf.high")] <-   log(PFN_adj_net_area_pred[,c("predicted","conf.low","conf.high")]) + intercept_center_adj
+    PNC_PFNs_centered[,net_y_var] <- log(PNC_PFNs[,net_y_var]) + intercept_center_adj
+    group_iso_centered_pred[,c("predicted","conf.low","conf.high")] <- log(group_adj_net_area_pred[,c("predicted","conf.low","conf.high")]) - intercept_center_adj
+    PNC_Group_centered[,net_y_var] <- log(PNC_Group[,net_y_var]) - intercept_center_adj
+  }
+  
+  y_min <- min(PNC_PFNs_centered[net_y_var]) #setting axes limits based on variability of PFN areas
+  y_max <- max(PNC_PFNs_centered[net_y_var])
+
+  x_min <- y_min - joint_intercept_0 #setting axes limits based on joint isometry line -> diag
+  x_max <- y_max - joint_intercept_0
+  
+  Fig <- ggplot(PFN_iso_centered_pred, aes(x = log(x), y = predicted)) +
+    geom_abline(intercept = joint_intercept_0, slope = 1, color = "#474747", linewidth = 0.3, alpha = 0.9, linetype = "longdash") + # isometry line
+    geom_point(data = PNC_Group_centered, aes(x = log(TC_area), y = get(net_y_var)), size = 1, alpha = 0.4, color = "#474747", shape = 17) +
+    geom_point(data = PNC_PFNs_centered, aes(x = log(TC_area), y = get(net_y_var)), size = 1, alpha = 0.4, color = net_colors[net]) +
+    geom_ribbon(data = group_iso_centered_pred, aes(ymin = conf.low, ymax = conf.high), fill = "gray", alpha = 0.4) +
+    geom_ribbon(aes(ymin = conf.low, ymax = conf.high), fill = net_colors[net], alpha = 0.4) +
+    geom_line(data = group_iso_centered_pred, aes(x = log(x), y = predicted), color = "#474747") + 
+    geom_line() + #line based on adjusted prediction
+    labs(title = paste0("Group vs PFN Network ",net," Scaling, PNC"),
+           x = "log(Total Cortical Area)",
+           y = paste0("Centered log(Network ",net," Area)")) +
+    theme_classic() +
+    theme(
+        plot.title = element_text(size = 25, hjust = 0.5),
+        axis.text.x = element_text(size = 25, color = "black"),
+        axis.text.y = element_text(size = 25, color = "black"),
+        axis.title.x  = element_text(size = 25, margin = margin(t = 10)),
+        axis.title.y  = element_text(size = 25, margin = margin(r = 10))
+    ) +
+    coord_cartesian(xlim = c(x_min, x_max), ylim = c(y_min, y_max)) + # set axes limits to get isometry line at diagonal
+    scale_x_continuous(breaks = c(11.5, 11.75, 12, 12.25, 12.5, 12.75)) +
+    theme(plot.margin = margin(20, 20, 20, 20))
+  print(Fig)
+  ggsave(paste0(dout,"/PNC_PFNs_v_Group_PFN",net,"_adj_log_log_scatterplot_isometric_diag_anchored.png"), width = 19, height = 16, dpi = 600, units = "cm")
+}
+```
+
+## --- PFNs vs Group --- ##
+## --- raw --- ##
+## Plot model-adjusted predictions on raw scale to show power law for PFNs vs group atlas- anchored isometry line + anchored plots + diag
+```{r}
+dout <- "../../Results/Scatterplots/Compare_plots"
+dir.create(dout)
+library(ggeffects)
+
+net_colors <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                "#4E31A8", "#F5BA2E")
+
+for (net in c(1:17)) {
+  net_y_var <- paste0("PFN",net,"_soft_parcel_normed")
+  #lm_iso <- lm(log(get(net_y_var)) ~ 1 + offset(log(TC_area)), data = PNC_PFNs) #fit isometric log-log model to estimate alpha
+  #intercept <- lm_iso$coefficients[1]
+  
+  PFN_adj_net_area_pred <- ggpredict(get(paste0("PFN",net,"_gam")), terms = "TC_area", typical = "mean") #get adjusted prediction
+  group_adj_net_area_pred <- ggpredict(get(paste0("Group_PFN",net,"_gam")), terms = "TC_area", typical = "mean") #get adjusted prediction
+  
+  #PFN anchored isometry a_0
+  PFN_TC_min <- min(PFN_adj_net_area_pred$x) # min TC area value in dataset
+  PFN_net_0 <- PFN_adj_net_area_pred$predicted[PFN_adj_net_area_pred$x == PFN_TC_min]
+  PFN_a_0 <- PFN_net_0/PFN_TC_min #get model-predicted proportion (cov-controlled) at minimum TC area
+  PFN_intercept_0 <- log(PFN_a_0)
+  
+  #Group atlas anchored isometry a_0
+  group_TC_min <- min(group_adj_net_area_pred$x) # min TC area value in dataset
+  group_net_0 <- group_adj_net_area_pred$predicted[group_adj_net_area_pred$x == group_TC_min]
+  group_a_0 <- group_net_0/group_TC_min #get model-predicted proportion (cov-controlled) at minimum TC area
+  group_intercept_0 <- log(group_a_0)
+  
+  joint_intercept_0 <- mean(c(PFN_intercept_0,group_intercept_0)) #get joint isometry line as average of a_0's
+
+  # Centering PFN and Group predictions, CI's, and actual data to joint isometry line
+  intercept_center_adj <- abs(PFN_intercept_0 - group_intercept_0)/2
+  
+  #define data to be centered
+  PFN_iso_centered_pred <- PFN_adj_net_area_pred
+  PNC_PFNs_centered <- PNC_PFNs[,c("TC_area",net_y_var)]
+  group_iso_centered_pred <- group_adj_net_area_pred
+  PNC_Group_centered <- PNC_Group[,c("TC_area",net_y_var)]
+  
+  # +/- depends on which intercept_0 was higher - centered values have been back-transformed to raw space
+  if (PFN_intercept_0 > group_intercept_0) {
+    PFN_iso_centered_pred[,c("predicted","conf.low","conf.high")] <-   exp(log(PFN_adj_net_area_pred[,c("predicted","conf.low","conf.high")]) - intercept_center_adj)
+    PNC_PFNs_centered[,net_y_var] <- exp(log(PNC_PFNs[,net_y_var]) - intercept_center_adj)
+    group_iso_centered_pred[,c("predicted","conf.low","conf.high")] <- exp(log(group_adj_net_area_pred[,c("predicted","conf.low","conf.high")]) + intercept_center_adj)
+    PNC_Group_centered[,net_y_var] <- exp(log(PNC_Group[,net_y_var]) + intercept_center_adj)
+    
+  } else {
+    PFN_iso_centered_pred[,c("predicted","conf.low","conf.high")] <-   exp(log(PFN_adj_net_area_pred[,c("predicted","conf.low","conf.high")]) + intercept_center_adj)
+    PNC_PFNs_centered[,net_y_var] <- exp(log(PNC_PFNs[,net_y_var]) + intercept_center_adj)
+    group_iso_centered_pred[,c("predicted","conf.low","conf.high")] <- exp(log(group_adj_net_area_pred[,c("predicted","conf.low","conf.high")]) - intercept_center_adj)
+    PNC_Group_centered[,net_y_var] <- exp(log(PNC_Group[,net_y_var]) - intercept_center_adj)
+  }
+
+  Fig <- ggplot(PFN_iso_centered_pred, aes(x = x, y = predicted)) +
+    geom_abline(intercept = 0, slope = exp(joint_intercept_0), color = "#474747", linewidth = 0.3, linetype = "longdash") + # isometry line
+    geom_point(data = PNC_Group_centered, aes(x = TC_area, y = get(net_y_var)), size = 1, alpha = 0.4, color = "#474747", shape = 17) +
+    geom_point(data = PNC_PFNs_centered, aes(x = TC_area, y = get(net_y_var)), size = 1, alpha = 0.4, color = net_colors[net]) +
+    geom_line(data = group_iso_centered_pred, aes(x = x, y = predicted), color = "#474747", linewidth = 0.6) + 
+    geom_line(color = net_colors[net], linewidth = 1.2) + #line based on adjusted prediction
+    labs(title = paste0("Group vs PFN Network ",net," Scaling"),
+           x = expression("Total Cortical Area ("~mm^{2}~")"),
+           y = bquote("Centered Network " * .(net) * " Area ("~mm^2~")")) +
+    theme_classic() +
+    theme(
+        plot.title = element_text(size = 25, hjust = 0),
+        axis.text.x = element_text(size = 25, color = "black"),
+        axis.text.y = element_text(size = 25, color = "black"),
+        axis.title.x  = element_text(size = 25, margin = margin(t = 10)),
+        axis.title.y  = element_text(size = 25, margin = margin(r = 10))
+    )
+  print(Fig)
+  ggsave(paste0(dout,"/PNC_PFNs_v_Group_PFN",net,"_adj_raw_scatterplot_isometric_diag_anchored.png"), width = 19, height = 16, dpi = 600, units = "cm")
+}
+```
