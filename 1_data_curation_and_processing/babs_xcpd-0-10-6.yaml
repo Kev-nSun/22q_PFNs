@@ -1,0 +1,74 @@
+# Define the input datasets
+input_datasets:
+    fmriprep_func:
+        required_files:
+            - "*fmriprep_func*.zip"
+        is_zipped: true
+        origin_url: "/cbica/projects/bbl_22q/data/22q_fmriprep_func_25-0-0-BABS_outputs"
+        unzipped_path_containing_subject_dirs: "fmriprep_func"
+        path_in_babs: inputs/data/fmriprep_func
+
+# Arguments in `singularity run`:
+bids_app_args:
+    $SUBJECT_SELECTION_FLAG: "--participant-label"
+    -w: "$BABS_TMPDIR"
+    --stop-on-first-crash: ""
+    --fs-license-file: "/cbica/projects/bbl_22q/software/freesurfer/license.txt"
+    -vv: ""
+    --mode: "linc"
+    --dummy-scans: "auto"
+    --input-type: "fmriprep"
+    --nthreads: "8"
+    --omp-nthreads: "8"
+    --mem-gb: "50"
+    --atlases:
+        "4S1056Parcels \
+        4S156Parcels \
+        4S256Parcels \
+        4S356Parcels \
+        4S456Parcels \
+        4S556Parcels \
+        4S656Parcels \
+        4S756Parcels \
+        4S856Parcels \
+        4S956Parcels \
+        Glasser \
+        Gordon \
+        HCP \
+        MIDB \
+        Tian"
+
+# Output foldername(s) to be zipped, and the BIDS App version to be included in the zip filename(s):
+#   As fMRIPrep will use BIDS output layout, we need to ask BABS to create a folder 'xcpd' to wrap all derivatives:
+all_results_in_one_zip: true
+zip_foldernames:
+    xcpd: "0-10-6" # folder 'xcpd' will be zipped into 'sub-xx_(ses-yy_)xcpd-0-10-6.zip'
+
+# Arguments that are passed directly to singularity/apptainer:
+singularity_args:
+    - --containall
+    - --writable-tmpfs
+
+# How much cluster resources it needs:
+cluster_resources:
+    interpreting_shell: "/bin/bash -l"
+    hard_runtime_limit: "7:00:00"
+    temporary_disk_space: 200G
+    customized_text: |
+        #SBATCH -p all
+        #SBATCH --nodes=1 
+        #SBATCH --ntasks=1
+        #SBATCH --cpus-per-task=8
+        #SBATCH --mem=50G
+        #SBATCH --propagate=NONE
+
+# Necessary commands to be run first:
+#   change or add commands for setting up the virtual environment, for loading necessary modules, etc
+script_preamble: |
+    eval "$(micromamba shell hook --shell bash)"
+    micromamba activate babs
+
+# Where to run the jobs:
+job_compute_space: "${TMP}"   # [FIX ME] replace "/path/to/temporary_compute_space" with yours
+
+
