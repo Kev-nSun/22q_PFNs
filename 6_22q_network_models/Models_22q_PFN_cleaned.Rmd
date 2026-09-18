@@ -30,7 +30,7 @@ areas_all <- rbind(areas_PNC,areas_22q) # n = 1596
 matched_demo <- read.csv("../../Results/Demographic_matching/matched_all_demo_QC_median_fd_r1x3.csv") # n = 215
 matched_all <- merge(matched_demo,areas_all,by="subject") # n = 215
 
-#write_csv(matched_all,paste0("../../Inputs/22q_PNC_matched_all.csv"))
+write_csv(matched_all,paste0("../../Inputs/22q_PNC_matched_all.csv"))
 
 PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-lh", "DM-A", "SM-rh", "DA-ant", "ParMem", "Auditory", "FP-B")
 ```
