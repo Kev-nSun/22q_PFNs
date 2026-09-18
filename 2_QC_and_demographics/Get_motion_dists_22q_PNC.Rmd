@@ -1,5 +1,5 @@
 ---
-title: "Get_QC_dists"
+title: "Get_motion_dists_22q_PNC"
 author: "Kevin Sun"
 date: "`r Sys.Date()`"
 output: html_document
