@@ -33,7 +33,7 @@ PFNs_hardparcel<-read_cifti('C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander
 
 #Surface files needed for clustering
 L_surf_file <- 'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Inputs/tpl-fsLR_den-32k_hemi-L_midthickness.surf.gii'
-R_surf_file <- 'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Inputs/tpl-fsLR_den-32k_hemi-L_midthickness.surf.gii'
+R_surf_file <- 'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Inputs/tpl-fsLR_den-32k_hemi-R_midthickness.surf.gii'
 
 #GET ALL ZERO MASK FOR VISUALIZATION
 PFNs_all_zero_mask<-read_cifti('C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/PNC_data/PNC_PFN_all_zero_mask.dscalar.nii')
@@ -96,7 +96,7 @@ for (PFN in c(1:17))
   #find clusters using 50 mm2 surface area threshold in cifti, based on abs value beta maps
   infile <- outfile_abs
   clust_file <- paste0(bin_dirout,'/PFN',PFN,'_50mm_cluster_binary_TCA.dscalar.nii')
-  cmd <- paste0('wb_command -cifti-find-clusters ',infile,'.dscalar.nii ',1e-12,' ',50,' ',0,' ',0,' COLUMN ',clust_file,' -left-surface C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Q1-Q6_R440.L.inflated.32k_fs_LR.surf.gii -right-surface C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Q1-Q6_R440.R.inflated.32k_fs_LR.surf.gii')
+  cmd <- paste0('wb_command -cifti-find-clusters ',infile,'.dscalar.nii ',1e-12,' ',50,' ',0,' ',0,' COLUMN ',clust_file,' -left-surface ',L_surf_file,' -right-surface ',R_surf_file)
   system(cmd)
 
   #read in clustered vertices and relabel them with vertex gam weight
