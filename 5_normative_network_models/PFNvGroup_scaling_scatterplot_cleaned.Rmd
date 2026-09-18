@@ -24,7 +24,7 @@ dout <- "../../Results/Scatterplots"
 dir.create(dout)
 
 Group_atlas_size <- read.csv("../../../PNC_data/PNC_group_atlas/PNC_Group_atlas_PFN_sizes_and_avg_loading.csv")
-Group_v_PFN_diff <- read.csv("../../Results/PNC_Delta_models/PNC_Group_vs_PFN_boot_diff_2_tail_pvals_bonf.csv")
+Group_v_PFN_diff <- read.csv("../../Results/PNC_Delta_models/PNC_Group_vs_PFN_boot_results_two_sided.csv")
 Group_v_PFN_scaling <- data.frame(
   Group_effects = PNC_group_scaling_effects$beta, 
   PFN_effects = PNC_PFN_scaling_effects$beta,
@@ -123,13 +123,12 @@ ggsave(paste0(dout,"/All_networks_group_vs_PFN_scaling_effects_with_corr_points_
 
 ```
 
-## Plot func rep size vs PFN scaling
+## Plot functional extent size vs PFN area scaling
 ```{r}
 dout <- "../../Results/Scatterplots"
 dir.create(dout)
 
 Group_atlas_size <- read.csv("../../../PNC_data/PNC_group_atlas/PNC_Group_atlas_PFN_sizes_and_avg_loading.csv")
-Group_v_PFN_diff <- read.csv("../../Results/PNC_Delta_models/PNC_Group_vs_PFN_boot_diff_2_tail_pvals_bonf.csv")
 Func_size_v_PFN_scaling <- data.frame(
   Func_size_effects = (PNC_PFN_func_effects$beta*log(1.5)), 
   PFN_effects = PNC_PFN_scaling_effects$beta,
@@ -197,7 +196,7 @@ print(Fig)
 ggsave(paste0(dout,"/All_networks_Func_ext_vs_PFN_scaling_effects_with_corr_points_3_8_outlines.png"), width = 21, height = 16, dpi = 600, units = "cm")
 
 ```
-## Plot func rep size vs group atlas scaling
+## Plot functional extent size vs group atlas area scaling
 ```{r}
 dout <- "../../Results/Scatterplots"
 dir.create(dout)
