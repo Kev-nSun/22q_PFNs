@@ -58,7 +58,7 @@ func_models_size_normed <- list()
 
 for (net in c(1:17)) {
   func_size <- sprintf("PFN%02d",net)
-  func_model <- gam(log(get(func_size)) ~ stat_22q+log(TC_area)+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all)
+  func_model <- gam(log(get(func_size)) ~ stat_22q+log(TC_area)+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all,method = "REML")
   print(tab_model(func_model,dv.labels=c(paste0("Net ",net, "Functional Extent")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/log_log_22q_temp_func_area_net_",net,"_subclass.doc")))
   func_models_size_normed[[net]] <- func_model #store all models in list
 }
@@ -83,7 +83,7 @@ write_csv(func_bonf_normed_results,paste0(dout,"/log_log_22q_temp_func_area_summ
 ```
 
 
-### Bar plot of normed and raw func size 22q effect w TCA:
+### Bar plot of log-log func size 22q effect w TCA:
 ```{r}
 p_vec_adj<- func_bonf_normed_results[,3]
 print(p_vec_adj)
@@ -143,7 +143,7 @@ ggsave(paste0("../../Results/22q_PFN_Func_Temp/subclass/log_log_22q_temp_func_ar
 ```
 
 
-## Normed and raw func size models no TCA
+## log-log func size models no TCA
 ```{r}
 dout <- "../../Results/22q_PFN_Func_Temp/subclass"
 dir.create(dout)
@@ -152,14 +152,14 @@ func_models_size_no_TCA_normed <- list()
 
 for (net in c(1:17)) {
   func_size <- sprintf("PFN%02d",net)
-  func_model <- gam(log(get(func_size)) ~ stat_22q+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all)
+  func_model <- gam(log(get(func_size)) ~ stat_22q+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all,method = "REML")
   print(tab_model(func_model,dv.labels=c(paste0("Net ",net, "Functional Representation")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/log_log_22q_temp_func_area_net_",net,"no_TCA_subclass.doc")))
   func_models_size_no_TCA_normed[[net]] <- func_model #store all models in list
 }
 
 ```
 
-## Normed and raw func size model no TCA significance results and fdr correction
+## log-log func size model no TCA significance results and fdr correction
 ```{r}
 dout <- "../../Results/22q_PFN_Func_Temp/subclass"
 
@@ -177,7 +177,7 @@ func_bonf_normed_results_no_TCA <-  data.frame(PFN = PFN_names, beta = func_size
 write_csv(func_bonf_normed_results_no_TCA,paste0(dout,"/log_log_22q_temp_func_area_no_TCA_summary_results_subclass.csv"))
 ```
 
-### Bar plot of scaling, linear:
+### Bar plot of scaling, no TCA:
 ```{r}
 p_vec_adj<- func_bonf_normed_results_no_TCA[,3]
 print(p_vec_adj)
