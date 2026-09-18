@@ -30,7 +30,7 @@ dir.create(unthres_dirout)
 
 #Surface files needed for clustering
 L_surf_file <- 'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Inputs/tpl-fsLR_den-32k_hemi-L_midthickness.surf.gii'
-R_surf_file <- 'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Inputs/tpl-fsLR_den-32k_hemi-L_midthickness.surf.gii'
+R_surf_file <- 'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Inputs/tpl-fsLR_den-32k_hemi-R_midthickness.surf.gii'
 
 #GET ALL ZERO MASK FOR VISUALIZATION
 PFNs_all_zero_mask<-read_cifti('C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/PNC_data/PNC_PFN_all_zero_mask.dscalar.nii')
