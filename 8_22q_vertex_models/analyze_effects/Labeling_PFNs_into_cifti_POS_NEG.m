@@ -10,20 +10,17 @@ clc
 WorkbenchDir = 'C:\workbench\bin_windows64';
 SPMDir       = 'C:\workbench\spm12';
 
-% Input/output folder
-% TCA
-% VisualizeFolder = ...
-    'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/22q_PFN_loadings_gam_results_subclass/Normed_TCA/Maps/PFN_ID_clusts/';
-% no TCA:
-    VisualizeFolder = ...
-    'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/22q_PFN_loadings_gam_results_subclass/Normed_no_TCA/Maps/PFN_ID_clusts/';
-
-
 % Map naming components
 MapPrefix = '22q';
 Signs     = {'POS','NEG'};
-%MapSuffix = 'PFN_ID_clust_50mm';
-MapSuffix = 'PFN_ID_clust_50mm_no_TCA';
+
+% TCA
+ VisualizeFolder = 'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/22q_PFN_loadings_gam_results_subclass/Normed_TCA/Maps/PFN_ID_clusts/';
+ MapSuffix = 'PFN_ID_clust_50mm';
+% no TCA:
+% VisualizeFolder = 'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/22q_PFN_loadings_gam_results_subclass/Normed_no_TCA/Maps/PFN_ID_clusts/';
+% MapSuffix = 'PFN_ID_clust_50mm_no_TCA';
+
 
 % Number of PFNs/networks
 NumNetworks = 17;
