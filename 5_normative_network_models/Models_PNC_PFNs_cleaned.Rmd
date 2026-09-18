@@ -32,7 +32,7 @@ colnames(PNC_TC_and_PFNs_network_areas)[11] <- "PFN9_soft_parcel_normed"
 PNC_demos <- read.csv("../../Inputs/filtered_demo_PNC.csv") #n = 1332
 PNC_all <- merge(PNC_TC_and_PFNs_network_areas,PNC_demos,by="participant_id") # n = 1332
 
-write_csv(PNC_all,paste0("../../Inputs/PNC_filtered_all.csv"))
+#write_csv(PNC_all,paste0("../../Inputs/PNC_filtered_all.csv"))
 
 PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-lh", "DM-A", "SM-rh", "DA-ant", "ParMem", "Auditory", "FP-B")
 
@@ -293,7 +293,7 @@ pfn_inAscend_indx <- c()
 for (t in c(1:17)) { pfn_inAscend_indx <- append(pfn_inAscend_indx,which(sorted_beta == t))} #if using numbers, switch all pfn_inAscend to pfn_inAscend_indx and comment out next line
 pfn_inAscend <- PFN_names[pfn_inAscend_indx]
 
-diff_sig <- read.csv("../../Results/PNC_delta_models/PNC_Group_vs_PFN_boot_results.csv")
+diff_sig <- read.csv("../../Results/PNC_delta_models/PNC_Group_vs_PFN_boot_results_two_sided.csv")
 diff_sig_p <- diff_sig$p_delta_beta_bonf
 stars <- ifelse(diff_sig_p < 0.05, "*", "")
 
