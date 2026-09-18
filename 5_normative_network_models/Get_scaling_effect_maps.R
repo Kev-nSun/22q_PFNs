@@ -8,8 +8,8 @@ library(ggplot2)
 Hard_parcel_map<-read_cifti('../../../PNC_data/PNC_group_atlas/PNC_group_hard_parcellation.dscalar.nii') #hard parcel cifti used as template
 PNC_PFN_scaling_effects <- read.csv("../../Results/PNC_PFN_Age/PNC_PFNs_log_log_summary_results_bonf_REML_netnames.csv")
 PNC_group_scaling_effects <- read.csv("../../Results/PNC_Group_Age/PNC_group_log_log_summary_results_bonf_REML_netnames.csv")
-Scaling_effect_diff <- read.csv("../../Results/PNC_Delta_models/PNC_Group_vs_PFN_boot_results.csv")
-Func_rep_scaling_effects <- read.csv("../../Results/PNC_PFN_Func_Temp/normed_temp_func_area_summary_results.csv")
+Scaling_effect_diff <- read.csv("../../Results/PNC_Delta_models/PNC_Group_vs_PFN_boot_results_two_sided.csv")
+Func_rep_scaling_effects <- read.csv("../../Results/PNC_PFN_Func_Temp/log_log_temp_func_area_summary_results.csv")
 
 #Get network IDs
 vertex_ID_lh <- Hard_parcel_map$data$cortex_left
@@ -119,7 +119,7 @@ write_cifti(PNC_Diff_scaling_effect_map,outfile) # save out cifti
 
 
 #---Func_temp_scaling---
-Func_rep_effect_for_vert <- Func_rep_scaling_effects$beta*log(1.5)
+Func_rep_effect_for_vert <- Func_rep_scaling_effects$beta
 Func_rep_effect_vert_lh <- matrix(0,29696,1)
 Func_rep_effect_vert_rh <- matrix(0,29716,1)
 
