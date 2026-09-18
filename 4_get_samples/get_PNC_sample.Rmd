@@ -1,5 +1,5 @@
 ---
-title: "log_log_PNC_group_normative"
+title: "get_PNC_sample"
 author: "Kevin Sun"
 date: "`10/31/2025`"
 output: html_document
