@@ -1,0 +1,46 @@
+---
+title: "22q_T1_QC_ratings_calc"
+author: "Kevin Sun"
+date: "`1/14/2026`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(readr)
+```
+
+#Read in 22q all 3 rater scores (2 intial raters + tiebreaker)
+```{r}
+
+T1_QC_22q <- read.csv("C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Initial_QC/T1_QC/T1_QC_22q_summary.csv") # n = 131
+
+```
+
+#Get average score across 4 scans
+```{r}
+# if no TB scores in all 4, take average of rater 1 scan scores
+# if TB score, use that in average instead
+
+r1_cols <- c("R1_S1_score", "R1_S3_score", "R1_A2_score", "R1_A3_score")
+tb_cols <- c("TB_S1_score", "TB_S3_score", "TB_A2_score", "TB_A3_score")
+
+#subset of columns
+R1_scores <- as.matrix(T1_QC_22q[, r1_cols])
+TB_scores <- as.matrix(T1_QC_22q[, tb_cols])
+
+# Combine scores: TB score replaces R1 when TB is not NA; otherwise keep R1 scores
+combined_scores <- R1_scores
+combined_scores[!is.na(TB_scores)] <- TB_scores[!is.na(TB_scores)]
+
+# Take mean of combined scores
+T1_QC_22q$avg_score <- rowMeans(combined_scores, na.rm = TRUE)
+
+```
+
+# Save out averaged score
+```{r}
+write.csv(T1_QC_22q,'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Demographics+QC/T1_QC/T1_QC_22q_with_avg.csv', row.names = FALSE)
+```
+
