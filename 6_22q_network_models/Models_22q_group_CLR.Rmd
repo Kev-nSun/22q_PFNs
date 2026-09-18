@@ -75,7 +75,7 @@ CLR_models <- list()
 
 for (net in c(1:17)) {
   CLR_net <- paste0("CLR_PFN", net)
-  CLR_model <- gam(get(CLR_net) ~ stat_22q+log(TC_area)+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all)
+  CLR_model <- gam(get(CLR_net) ~ stat_22q+log(TC_area)+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all,method = "REML")
   print(tab_model(CLR_model,dv.labels=c(paste0("PFN ",net, " -CLR")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/22q_CLR_Group_PFN",net,"_subclass.doc")))
   CLR_models[[net]] <- CLR_model #store all models in list
 }
