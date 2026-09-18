@@ -1,0 +1,399 @@
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(sjPlot)
+library(mgcv)
+library(boot)
+library(boot.pval)
+library(parallel)
+```
+
+#Import areas and demographics
+```{r}
+PNC_TC_and_group_network_areas <- read.csv("../../Inputs/PNC_summary_group.csv") # n = 1598
+colnames(PNC_TC_and_group_network_areas)[1] <- "participant_id"
+
+PNC_TC_and_PFNs_network_areas <- read.csv("../../Inputs/PNC_summary_PFNs.csv") # n = 1482
+colnames(PNC_TC_and_PFNs_network_areas)[1] <- "participant_id"
+colnames(PNC_TC_and_PFNs_network_areas)[3] <- "PFN1_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[4] <- "PFN2_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[5] <- "PFN3_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[6] <- "PFN4_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[7] <- "PFN5_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[8] <- "PFN6_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[9] <- "PFN7_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[10] <- "PFN8_soft_parcel_normed"
+colnames(PNC_TC_and_PFNs_network_areas)[11] <- "PFN9_soft_parcel_normed"
+
+PNC_demos <- read.csv("../../Inputs/filtered_demo_PNC.csv") #n = 1332
+
+PNC_Group <- merge(PNC_TC_and_group_network_areas,PNC_demos,by="participant_id") # n = 1332
+PNC_PFNs <- merge(PNC_TC_and_PFNs_network_areas,PNC_demos,by="participant_id") # n = 1332
+
+#Check equivalence of TC areas
+TC_area_equivalence <- identical(PNC_Group$TC_area, PNC_PFNs$TC_area)
+
+```
+
+#Merge together Group and PFN area data for PNC
+```{r}
+# Confirm participant ordering before combining
+stopifnot(
+  identical(PNC_Group$participant_id,
+            PNC_PFNs$participant_id)
+)
+
+# Rename group-atlas columns
+PNC_Group_boot <- PNC_Group
+names(PNC_Group_boot) <- gsub(
+  "PFN",
+  "group_PFN",
+  names(PNC_Group_boot)
+)
+names(PNC_Group_boot) <- gsub(
+  "_soft_parcel_normed",
+  "",
+  names(PNC_Group_boot)
+)
+
+# Rename PFN columns
+PNC_PFNs_boot <- PNC_PFNs
+names(PNC_PFNs_boot) <- gsub(
+  "_soft_parcel_normed",
+  "",
+  names(PNC_PFNs_boot)
+)
+
+# Append group network areas
+group_cols <- paste0("group_PFN", 1:17)
+
+PNC_test_null <- cbind(
+  PNC_PFNs_boot,
+  PNC_Group_boot[, group_cols, drop = FALSE]
+)
+
+pfn_cols <- paste0("PFN", 1:17)
+group_cols <- paste0("group_PFN", 1:17)
+
+stopifnot(
+  all(pfn_cols %in% names(PNC_PFNs_boot)),
+  all(group_cols %in% names(PNC_Group_boot))
+)
+```
+
+#Bootstrap of delta between betas (difference between betas, 2-tailed + difference in deviation from isometry, 2-tailed)
+```{r}
+# Randomly sample N participants with replacement from the original N participants.
+# Fit the PFN GAM on that resampled dataset.
+# Fit the corresponding group-atlas GAM on the exact same resampled participants.
+# Extract the two cortical-area scaling coefficients: PFN + Group
+# Calculate the two comparison statistics: PFN-Group and |PFN-1| - |Group-1|
+# x 5000
+
+set.seed(1)
+boot_n <- 5000
+nets <- 1:17
+make_boot_stat <- function(y_pfn, y_group) {
+
+  function(data, indices) {
+
+    d <- data[indices, , drop = FALSE]
+
+    fit_pfn <- gam(
+      log(d[[y_pfn]]) ~
+        log(TC_area) +
+        sex +
+        euler +
+        median_fd_combined +
+        s(age, k = 4),
+      data = d,
+      method = "REML"
+    )
+
+    fit_group <- gam(
+      log(d[[y_group]]) ~
+        log(TC_area) +
+        sex +
+        euler +
+        median_fd_combined +
+        s(age, k = 4),
+      data = d,
+      method = "REML"
+    )
+
+    beta_pfn <- coef(fit_pfn)[["log(TC_area)"]]
+    beta_group <- coef(fit_group)[["log(TC_area)"]]
+
+    c(
+      beta_pfn = beta_pfn,
+      beta_group = beta_group,
+      delta_diff = beta_pfn - beta_group,
+      delta_dev =
+        abs(beta_pfn - 1) -
+        abs(beta_group - 1)
+    )
+  }
+}
+
+# Number of workers
+# Leaving 1-2 logical cores free is usually sensible on a local machine
+n_cores <- max(1, detectCores() - 2)
+
+# Create Windows PSOCK cluster
+cl <- makeCluster(n_cores)
+
+# Load required packages on every worker
+clusterEvalQ(cl, {
+  library(mgcv)
+  library(boot)
+})
+
+# Reproducible independent RNG streams for workers
+clusterSetRNGStream(cl, iseed = 1)
+
+boot_results <- vector("list", length(nets))
+names(boot_results) <- paste0("PFN", nets)
+
+sample_sizes <- integer(length(nets))
+
+for (net in nets) {
+
+  y_pfn <- paste0("PFN", net)
+  y_group <- paste0("group_PFN", net)
+
+  required_vars <- c(
+    y_pfn,
+    y_group,
+    "TC_area",
+    "sex",
+    "euler",
+    "median_fd_combined",
+    "age"
+  )
+
+  d_net <- PNC_test_null[
+    complete.cases(
+      PNC_test_null[, required_vars]
+    ),
+    ,
+    drop = FALSE
+  ]
+
+  # Variables that are logged must be > 0
+  d_net <- d_net[
+    d_net[[y_pfn]] > 0 &
+    d_net[[y_group]] > 0 &
+    d_net$TC_area > 0,
+    ,
+    drop = FALSE
+  ]
+
+  sample_sizes[net] <- nrow(d_net)
+
+  boot_results[[y_pfn]] <- boot(
+    data = d_net,
+    statistic = make_boot_stat(
+      y_pfn = y_pfn,
+      y_group = y_group
+    ),
+    R = boot_n,
+
+    # Windows parallelization
+    parallel = "snow",
+    ncpus = n_cores,
+    cl = cl
+  )
+
+  message(
+    "Finished network ", net,
+    " of ", length(nets),
+    "; n = ", nrow(d_net)
+  )
+}
+
+# shut down the workers when finished
+stopCluster(cl)
+```
+
+#Compare delta of boostrapped PFN and Group Atlas betas of TC_area effect (difference in deviation from isometry, 2-tailed + difference between betas, 2-tailed)
+```{r}
+dout <- "../../Results/PNC_Delta_models"
+dir.create(dout)
+
+# Bias-corrected and accelerated (BCa) bootstrap confidence intervals:
+# - bias correction accounts for displacement of the bootstrap distribution relative to the observed estimate
+# - acceleration accounts for changes in the standard error with the underlying data, using empirical influence information
+
+# Bootstrap p-values are obtained by inversion of the corresponding BCa confidence-interval procedure.
+
+results <- vector("list", length(nets))
+
+for (net in nets) {
+
+  pfn_name <- paste0("PFN", net)
+  b <- boot_results[[pfn_name]]
+
+  # observed statistics
+  beta_pfn_obs   <- b$t0[1]
+  beta_group_obs <- b$t0[2]
+  delta_diff_obs <- b$t0[3]
+  delta_dev_obs  <- b$t0[4]
+
+  
+  n_boot_valid <- sum(
+    apply(b$t, 1, function(x) all(is.finite(x)))
+  )
+  
+  prop_boot_valid <- n_boot_valid / boot_n
+  
+  # BCa confidence intervals
+  ci_diff <- boot.ci(
+    b,
+    type = "bca",
+    index = 3
+  )$bca[4:5]
+
+  ci_dev <- boot.ci(
+    b,
+    type = "bca",
+    index = 4
+  )$bca[4:5]
+  
+  # Bootstrap CIs of betas
+  ci_beta_pfn <- boot.ci(
+    b,
+    type = "bca",
+    index = 1
+  )$bca[4:5]
+  
+  ci_beta_group <- boot.ci(
+    b,
+    type = "bca",
+    index = 2
+  )$bca[4:5]
+  
+  # Bootstrap p-values from CI inversion
+  p_diff <- boot.pval(
+    b,
+    type = "bca",
+    theta_null = 0,
+    alternative = "two.sided",
+    index = 3
+  )
+
+  p_dev <- boot.pval(
+    b,
+    type = "bca",
+    theta_null = 0,
+    alternative = "two.sided", #or "greater" for one-sided
+    index = 4
+  )
+
+  results[[net]] <- data.frame(
+    PFN = pfn_name,
+    
+    n_boot_valid = n_boot_valid,
+    prop_boot_valid = prop_boot_valid,
+  
+    beta_pfn = beta_pfn_obs,
+    beta_pfn_CI_low = ci_beta_pfn[1],
+    beta_pfn_CI_high = ci_beta_pfn[2],
+  
+    beta_group = beta_group_obs,
+    beta_group_CI_low = ci_beta_group[1],
+    beta_group_CI_high = ci_beta_group[2],
+  
+    delta_beta = delta_diff_obs,
+    delta_beta_CI_low = ci_diff[1],
+    delta_beta_CI_high = ci_diff[2],
+    p_delta_beta = p_diff,
+  
+    delta_deviation = delta_dev_obs,
+    delta_deviation_CI_low = ci_dev[1],
+    delta_deviation_CI_high = ci_dev[2],
+    p_delta_deviation = p_dev
+  )
+}
+
+results <- bind_rows(results)
+
+results <- results %>%
+  mutate(
+    p_delta_beta_bonf =
+      p.adjust(
+        p_delta_beta,
+        method = "bonferroni"
+      ),
+
+    p_delta_deviation_bonf =
+      p.adjust(
+        p_delta_deviation,
+        method = "bonferroni"
+      )
+  )
+
+write_csv(results,paste0(dout,"/PNC_Group_vs_PFN_boot_results_two_sided.csv"))
+```
+
+# Higher-order vs lower-order network t-tests on absolute deltas
+```{r}
+
+dout <- "../../Results/PNC_Delta_models"
+
+results <- read_csv(
+  paste0(dout, "/PNC_Group_vs_PFN_boot_results_two_sided.csv")
+)
+
+# Lower-order networks
+lower_order_nets <- c(2, 4, 6, 10, 11, 13, 16)
+
+network_order_df <- data.frame(
+  PFN = paste0("PFN", 1:17),
+  network_order = ifelse(
+    1:17 %in% lower_order_nets,
+    "lower_order",
+    "higher_order"
+  )
+)
+
+results <- results %>%
+  left_join(network_order_df, by = "PFN") %>%
+  mutate(
+    abs_delta_beta = abs(delta_beta),
+    abs_delta_deviation = abs(delta_deviation)
+  )
+
+# Welch two-sample t-tests; does not assume equal variance
+ttest_abs_delta_beta <- t.test(
+  abs_delta_beta ~ network_order,
+  data = results,
+  var.equal = FALSE
+)
+
+# Compact summary table
+network_order_ttest_results <- bind_rows(
+  data.frame(
+    outcome = "abs_delta_beta",
+    mean_higher_order = mean(results$abs_delta_beta[results$network_order == "higher_order"], na.rm = TRUE),
+    mean_lower_order = mean(results$abs_delta_beta[results$network_order == "lower_order"], na.rm = TRUE),
+    difference_higher_minus_lower =
+      mean(results$abs_delta_beta[results$network_order == "higher_order"], na.rm = TRUE) -
+      mean(results$abs_delta_beta[results$network_order == "lower_order"], na.rm = TRUE),
+    t = unname(ttest_abs_delta_beta$statistic),
+    df = unname(ttest_abs_delta_beta$parameter),
+    p = ttest_abs_delta_beta$p.value,
+    ci_low = ttest_abs_delta_beta$conf.int[1],
+    ci_high = ttest_abs_delta_beta$conf.int[2]
+  )
+)
+
+print(network_order_ttest_results)
+
+write_csv(
+  network_order_ttest_results,
+  paste0(dout, "/PNC_higher_vs_lower_order_abs_delta_ttests.csv")
+)
+```

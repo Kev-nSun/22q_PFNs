@@ -1,0 +1,657 @@
+---
+title: "log_log_PNC_group_normative"
+author: "Kevin Sun"
+date: "`10/31/2025`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(sjPlot)
+library(mgcv)
+```
+
+#Import areas and demographics and establish PFN names
+```{r}
+
+PNC_TC_and_group_network_areas <- read.csv("../../Inputs/PNC_summary_group.csv") # n = 1598
+colnames(PNC_TC_and_group_network_areas)[1] <- "participant_id"
+
+PNC_demos <- read.csv("../../Inputs/filtered_demo_PNC.csv") #n = 1332
+PNC_all <- merge(PNC_TC_and_group_network_areas,PNC_demos,by="participant_id") # n = 1332
+
+PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-lh", "DM-A", "SM-rh", "DA-ant", "ParMem", "Auditory", "FP-B")
+```
+
+#Factorize sex
+```{r}
+PNC_all$sex <- factor(PNC_all$sex)
+```
+
+#Get statistics of areas
+```{r}
+dout <- "../../Results/Area_stats"
+dir.create(dout)
+
+Group_area_stats <- matrix(0,17,2)
+
+for (net in c(1:9)) {
+  Group_area_stats[net,1] <- mean(PNC_all[,net+10])
+  Group_area_stats[net,2] <- sd(PNC_all[,net+10])
+}
+for (net in c(10:17)) {
+  Group_area_stats[net,1] <- mean(PNC_all[,net-7])
+  Group_area_stats[net,2] <- sd(PNC_all[,net-7])
+}
+
+Group_area_stats <- data.frame(Network = PFN_names, area_mean = Group_area_stats[,1], area_SD = Group_area_stats[,2])
+
+write_csv(Group_area_stats,paste0(dout,"/PNC_Group_area_stats.csv"))
+```
+
+
+### Bar plot of group atlas area stats:
+```{r}
+mean_area <- Group_area_stats[,2]
+sd_area   <- Group_area_stats[,3]
+
+# Base data frame with identity preserved
+data <- data.frame(
+  EffectSizes = as.numeric(mean_area),
+  SD          = as.numeric(sd_area),
+  Network     = 1:17
+)
+
+# ---- SORT BY MEAN AREA (ascending) ----
+data <- data[order(data$EffectSizes), ]
+
+# Make Network a factor in sorted order
+data$Network <- factor(data$Network, levels = data$Network)
+
+# Colors tied to original network numbers
+BorderColor <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E")
+
+LineType <- rep("solid", 17)
+
+# Get original network indices in sorted order
+network_idx <- as.numeric(as.character(data$Network))
+
+Fig <- ggplot(data, aes(x = Network, y = EffectSizes)) +
+  geom_bar(stat = "identity",
+           fill   = BorderColor[network_idx],
+           colour = BorderColor[network_idx],
+           linetype = LineType[network_idx],
+           width = 0.8) +
+  # ---- BLACK ERROR BARS ----
+  geom_errorbar(aes(ymin = EffectSizes - SD, ymax = EffectSizes + SD),
+                width = 0.2,
+                size = 0.9,
+                color = "black") +
+  labs(title = "Group Atlas Area Mean + SD",
+       x = "Networks",
+       y = "Surface Area (mm2)") +
+  theme_classic() +
+  theme(
+    # REMOVE LEGEND
+    legend.position = "none",
+    plot.title = ggtext::element_markdown(size = 25, hjust = 0.5),
+    axis.text.x = ggtext::element_markdown(size = 25,
+                                           color = BorderColor[network_idx],
+                                           angle = 45, hjust = 1),
+    axis.text.y = ggtext::element_markdown(size = 25, color = "black"),
+    axis.title  = ggtext::element_markdown(size = 25)
+  ) +
+  scale_y_continuous(limits = c(0, 21000))
+Fig
+ggsave(paste0("../../Results/Area_stats/PNC_Group_area_stats_plot_sorted.png"), 
+       width = 19, height = 16, dpi = 600, units = "cm");
+```
+
+## log-log models including age spline
+```{r}
+dout <- "../../Results/PNC_Group_Age"
+dir.create(dout)
+
+summary(gam(log(PFN1_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN1_gam<-gam(log(PFN1_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN1_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN1"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN1_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN2_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN2_gam<-gam(log(PFN2_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN2_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN2"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN2_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN3_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN3_gam<-gam(log(PFN3_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN3_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN3"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN3_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN4_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN4_gam<-gam(log(PFN4_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN4_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN4"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN4_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN5_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN5_gam<-gam(log(PFN5_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN5_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN5"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN5_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN6_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN6_gam<-gam(log(PFN6_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN6_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN6"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN6_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN7_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN7_gam<-gam(log(PFN7_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN7_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN7"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN7_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN8_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN8_gam<-gam(log(PFN8_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN8_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN8"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN8_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN9_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN9_gam<-gam(log(PFN9_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN9_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN9"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN9_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN10_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN10_gam<-gam(log(PFN10_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN10_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN10"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN10_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN11_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN11_gam<-gam(log(PFN11_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN11_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN11"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN11_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN12_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN12_gam<-gam(log(PFN12_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN12_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN12"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN12_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN13_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN13_gam<-gam(log(PFN13_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN13_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN13"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN13_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN14_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN14_gam<-gam(log(PFN14_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN14_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN14"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN14_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN15_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN15_gam<-gam(log(PFN15_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN15_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN15"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN15_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN16_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN16_gam<-gam(log(PFN16_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN16_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN16"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN16_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN17_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN17_gam<-gam(log(PFN17_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN17_gam,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c("log PFN17"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN17_area_TC_area_age_cov_REML.doc", sep = ""))
+
+```
+
+# Get significance of beta scaling term via Wald test
+```{r}
+dout <- "../../Results/PNC_Group_Age"
+
+log_log_results <- matrix(0,17,2)
+
+for (net in c(1:17)) {
+  beta <- summary(get(paste0("PFN",net,"_gam")))$p.table["log(TC_area)", "Estimate"]
+  SE <- summary(get(paste0("PFN",net,"_gam")))$p.table["log(TC_area)", "Std. Error"]
+  z_val <- (beta - 1) / SE # Null is beta = 1 (isometry, linear scaling)
+  #df <- df.residual(get(paste0("PFN",net,"_gam")))
+  log_log_results[net,1] <- beta
+  log_log_results[net,2] <- 2 * (1 - pnorm(abs(z_val))) #Wald test
+}
+
+pvals_bonf <- p.adjust(log_log_results[,2], method = "bonf")
+#PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+log_log_wald_bonf <-  data.frame(PFN = PFN_names, beta = log_log_results[,1], pvals_bonf = pvals_bonf)
+
+#write_csv(log_log_wald_bonf,paste0(dout,"/PNC_group_log_log_summary_results_bonf_REML_netnames.csv"))
+```
+
+# Test unimodal vs heteromodal allometry as described in Anderson et al. 2020
+```{r}
+
+library(emmeans)
+
+dout <- "../../Results/PNC_Group_Age"
+dir.create(dout, showWarnings = FALSE, recursive = TRUE)
+
+mode_group <- factor(
+  c(2,1,2,1,2,1,2,2,2,1,1,2,1,2,2,1,2),
+  levels = c(1, 2),
+  labels = c("Unimodal", "Heteromodal")
+)
+
+dat <- data.frame(
+  PFN = paste0("PFN", 1:17),
+  beta = log_log_results[, 1],
+  mode_group = mode_group
+)
+
+tt <- t.test(beta ~ mode_group, data = dat)
+
+group_summary <- dat %>%
+  group_by(mode_group) %>%
+  summarise(
+    n = n(),
+    M = mean(beta, na.rm = TRUE),
+    SD = sd(beta, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+ttest_summary <- data.frame(
+  outcome = "beta",
+  test = "Welch two-sample t-test",
+  comparison = "Heteromodal vs Unimodal",
+  mean_heteromodal = group_summary$M[group_summary$mode_group == "Heteromodal"],
+  sd_heteromodal = group_summary$SD[group_summary$mode_group == "Heteromodal"],
+  n_heteromodal = group_summary$n[group_summary$mode_group == "Heteromodal"],
+  mean_unimodal = group_summary$M[group_summary$mode_group == "Unimodal"],
+  sd_unimodal = group_summary$SD[group_summary$mode_group == "Unimodal"],
+  n_unimodal = group_summary$n[group_summary$mode_group == "Unimodal"],
+  difference_heteromodal_minus_unimodal =
+    group_summary$M[group_summary$mode_group == "Heteromodal"] -
+    group_summary$M[group_summary$mode_group == "Unimodal"],
+  t = unname(tt$statistic),
+  df = unname(tt$parameter),
+  p = tt$p.value,
+  ci_low = tt$conf.int[1],
+  ci_high = tt$conf.int[2],
+  alternative = tt$alternative,
+  method = tt$method
+)
+
+write_csv(
+  ttest_summary,
+  file.path(dout, "Group_PNC_hetero_vs_uni_ttest.csv")
+)
+
+print(group_summary)
+print(ttest_summary)
+
+```
+
+### Bar plot of scaling:
+```{r}
+p_vec_adj<- log_log_wald_bonf[,3]
+print(p_vec_adj)
+keep_p <- ifelse(p_vec_adj<.05,1,0)
+print(keep_p)
+
+betas_from_zero <- log_log_wald_bonf[,2] - 1
+sorted_beta = rank(betas_from_zero);
+pfn_inAscend_indx <- c()
+for (t in c(1:17)) { pfn_inAscend_indx <- append(pfn_inAscend_indx,which(sorted_beta == t))} #if using numbers, switch all pfn_inAscend to pfn_inAscend_indx and comment out next line
+pfn_inAscend <- PFN_names[pfn_inAscend_indx]
+
+# Using 7 colors scheme for bar plot
+data <- data.frame(EffectSizes = as.numeric(betas_from_zero)) 
+data$EffectRank <- as.numeric(sorted_beta)
+# BorderColor1 is for colors of 1-17 network numbers(to lable the network numbers in a 1-17 order)
+BorderColor1 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E");
+				 
+# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN. ("black" is filled with black)
+BorderColor2 <- c("#FFFFFF", "#7499C2", "#F5BA2E", "#FFFFFF", "#00A131",
+                 "#FFFFFF", "#E443FF", "#FFFFFF", "#E443FF", "#FFFFFF",
+                 "#FFFFFF", "#FFFFFF", "#FFFFFF", "#00A131", "#FFFFFF", 
+                 "#FFFFFF", "#F5BA2E");
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend_indx]
+BorderColor3 <- BorderColor2[pfn_inAscend_indx]
+
+# TextColor is for x-axis network label color
+TextColor <- c("#767676", "black", "black", "#767676", "black",
+              "#767676", "black", "#767676", "black", "#767676",
+              "#767676", "#767676", "#767676", "black", "#767676",
+              "#767676", "black");
+
+
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend_indx]
+BorderColor3 <- BorderColor2[pfn_inAscend_indx]
+TextColor_ordered <- TextColor[pfn_inAscend_indx]
+
+Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
+  geom_bar(stat = "identity", fill=BorderColor3[sorted_beta], 
+           colour = BorderColor[sorted_beta], linetype = "solid", linewidth = 0.5, width = 0.8) + 
+  labs(title = NULL, x = NULL, y = paste0("Group Atlas Allometry (β)")) + theme_classic() +
+  theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
+  theme(axis.text.x = ggtext::element_markdown(size= 22, color = TextColor_ordered), 
+        axis.text.y = ggtext::element_markdown(size= 25, color = "black"), 
+        axis.title=ggtext::element_markdown(size = 25)) +
+  theme(axis.text.x = ggtext::element_markdown(angle = 65, hjust = 1, vjust = 0.5, margin = margin(t=-40)), #if numbers, change to 45 + hjust = 1
+    plot.margin = margin(t = 5.5, r = 5.5, b = 40, l = 5.5)) + # comment out if using numbers
+  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_beta)) + #change to pfn_inAscend_indx if using numbers
+  scale_y_continuous(
+    breaks = c(0.8, 0.9, 1.0, 1.1, 1.2, 1.3) - 1, #set breaks relative to 0
+    limits = c(0.8, 1.31) - 1, # match PFN results (more extreme betas)
+    labels = c(0.8, 0.9, 1.0, 1.1, 1.2, 1.3)  # set labels so betas are shown relative to 1
+  )
+Fig
+ggsave(paste0("../../Results/PNC_Group_Age/PNC_group_log_log_scaling_plot_0.8-1.31_bonf_REML_netnames_gray.png"), width = 19, height = 16, dpi = 600, units = "cm");
+ggsave(paste0("../../Results/PNC_Group_Age/PNC_group_log_log_scaling_plot_0.8-1.31_bonf_REML_netnames_gray.pdf"), device = cairo_pdf, width = 19, height = 16, dpi = 600, units = "cm");
+```
+
+## log-log models, no euler
+```{r}
+dout <- "../../Results/PNC_Group_Age/No_Euler/"
+dir.create(dout)
+
+summary(gam(log(PFN1_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN1_gam_no_euler<-gam(log(PFN1_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN1_gam_no_euler,pred.labels = c("Intercept","log TC Area","Sex","Median FD","Age Spline"),dv.labels=c("log PFN1"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN1_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN2_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN2_gam_no_euler<-gam(log(PFN2_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN2_gam_no_euler,pred.labels = c("Intercept","log TC Area","Sex","Median FD","Age Spline"),dv.labels=c("log PFN2"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN2_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN3_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN3_gam_no_euler<-gam(log(PFN3_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN3_gam_no_euler,pred.labels = c("Intercept","log TC Area","Sex","Median FD","Age Spline"),dv.labels=c("log PFN3"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN3_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN4_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN4_gam_no_euler<-gam(log(PFN4_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN4_gam_no_euler,pred.labels = c("Intercept","log TC Area","Sex","Median FD","Age Spline"),dv.labels=c("log PFN4"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN4_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN5_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN5_gam_no_euler<-gam(log(PFN5_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN5_gam_no_euler,pred.labels = c("Intercept","log TC Area","Sex","Median FD","Age Spline"),dv.labels=c("log PFN5"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN5_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN6_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN6_gam_no_euler<-gam(log(PFN6_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN6_gam_no_euler,pred.labels = c("Intercept","log TC Area","Sex","Median FD","Age Spline"),dv.labels=c("log PFN6"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN6_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN7_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN7_gam_no_euler<-gam(log(PFN7_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN7_gam_no_euler,pred.labels = c("Intercept","log TC Area","Sex","Median FD","Age Spline"),dv.labels=c("log PFN7"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN7_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN8_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN8_gam_no_euler<-gam(log(PFN8_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN8_gam_no_euler,pred.labels = c("Intercept","log TC Area","Sex","Median FD","Age Spline"),dv.labels=c("log PFN8"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN8_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN9_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN9_gam_no_euler<-gam(log(PFN9_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN9_gam_no_euler,pred.labels = c("Intercept","log TC Area","Sex","Median FD","Age Spline"),dv.labels=c("log PFN9"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN9_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN10_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN10_gam_no_euler<-gam(log(PFN10_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN10_gam_no_euler,pred.labels = c("Intercept","log TC Area","Sex","Median FD","Age Spline"),dv.labels=c("log PFN10"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN10_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN11_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN11_gam_no_euler<-gam(log(PFN11_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN11_gam_no_euler,pred.labels = c("Intercept","log TC Area","Sex","Median FD","Age Spline"),dv.labels=c("log PFN11"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN11_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN12_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN12_gam_no_euler<-gam(log(PFN12_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN12_gam_no_euler,pred.labels = c("Intercept","log TC Area","Sex","Median FD","Age Spline"),dv.labels=c("log PFN12"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN12_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN13_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN13_gam_no_euler<-gam(log(PFN13_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN13_gam_no_euler,pred.labels = c("Intercept","log TC Area","Sex","Median FD","Age Spline"),dv.labels=c("log PFN13"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN13_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN14_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN14_gam_no_euler<-gam(log(PFN14_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN14_gam_no_euler,pred.labels = c("Intercept","log TC Area","Sex","Median FD","Age Spline"),dv.labels=c("log PFN14"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN14_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN15_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN15_gam_no_euler<-gam(log(PFN15_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN15_gam_no_euler,pred.labels = c("Intercept","log TC Area","Sex","Median FD","Age Spline"),dv.labels=c("log PFN15"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN15_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN16_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN16_gam_no_euler<-gam(log(PFN16_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN16_gam_no_euler,pred.labels = c("Intercept","log TC Area","Sex","Median FD","Age Spline"),dv.labels=c("log PFN16"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN16_area_TC_area_age_cov_REML.doc", sep = ""))
+
+summary(gam(log(PFN17_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML"))
+PFN17_gam_no_euler<-gam(log(PFN17_soft_parcel_normed)~log(TC_area)+sex+median_fd_combined+s(age,k=4),data=PNC_all,method = "REML")
+#tab_model(PFN17_gam_no_euler,pred.labels = c("Intercept","log TC Area","Sex","Median FD","Age Spline"),dv.labels=c("log PFN17"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN17_area_TC_area_age_cov_REML.doc", sep = ""))
+
+```
+
+
+# Get significance of beta scaling term via Wald test for no Euler models
+```{r}
+dout <- "../../Results/PNC_Group_Age/No_Euler/"
+
+log_log_results_no_euler <- matrix(0,17,2)
+
+for (net in c(1:17)) {
+  beta <- summary(get(paste0("PFN",net,"_gam_no_euler")))$p.table["log(TC_area)", "Estimate"]
+  SE <- summary(get(paste0("PFN",net,"_gam_no_euler")))$p.table["log(TC_area)", "Std. Error"]
+  z_val <- (beta - 1) / SE # Null is beta = 1 (isometry, linear scaling)
+  #df <- df.residual(get(paste0("PFN",net,"_gam_no_euler")))
+  log_log_results_no_euler[net,1] <- beta
+  log_log_results_no_euler[net,2] <- 2 * (1 - pnorm(abs(z_val))) #Wald test
+}
+
+pvals_bonf <- p.adjust(log_log_results_no_euler[,2], method = "bonf")
+#PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+log_log_wald_no_euler_bonf <-  data.frame(PFN = PFN_names, beta = log_log_results_no_euler[,1], pvals_bonf = pvals_bonf)
+
+#write_csv(log_log_wald_no_euler_bonf,paste0(dout,"/PNC_group_log_log_summary_results_bonf_no_euler_netnames.csv"))
+```
+
+### Bar plot of scaling in no euler models:
+```{r}
+p_vec_adj<- log_log_wald_no_euler_bonf[,3]
+print(p_vec_adj)
+keep_p <- ifelse(p_vec_adj<.05,1,0)
+print(keep_p)
+
+betas_from_zero <- log_log_wald_no_euler_bonf[,2] - 1
+sorted_beta = rank(betas_from_zero);
+pfn_inAscend_indx <- c()
+for (t in c(1:17)) { pfn_inAscend_indx <- append(pfn_inAscend_indx,which(sorted_beta == t))} #if using numbers, switch all pfn_inAscend to pfn_inAscend_indx and comment out next line
+pfn_inAscend <- PFN_names[pfn_inAscend_indx]
+
+# Using 7 colors scheme for bar plot
+data <- data.frame(EffectSizes = as.numeric(betas_from_zero)) 
+data$EffectRank <- as.numeric(sorted_beta)
+# BorderColor1 is for colors of 1-17 network numbers(to lable the network numbers in a 1-17 order)
+BorderColor1 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E");
+				 
+# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN. ("black" is filled with black)
+BorderColor2 <- c("#FFFFFF", "#7499C2", "#F5BA2E", "#FFFFFF", "#00A131",
+                 "#FFFFFF", "#E443FF", "#FFFFFF", "#E443FF", "#FFFFFF",
+                 "#FFFFFF", "#FFFFFF", "#FFFFFF", "#00A131", "#FFFFFF", 
+                 "#FFFFFF", "#F5BA2E");
+
+# TextColor is for x-axis network label color
+TextColor <- c("#767676", "black", "black", "#767676", "black",
+              "#767676", "black", "#767676", "black", "#767676",
+              "#767676", "#767676", "#767676", "black", "#767676",
+              "#767676", "black");
+
+
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend_indx]
+BorderColor3 <- BorderColor2[pfn_inAscend_indx]
+TextColor_ordered <- TextColor[pfn_inAscend_indx]
+
+Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
+  geom_bar(stat = "identity", fill=BorderColor3[sorted_beta], 
+           colour = BorderColor[sorted_beta], linetype = "solid", linewidth = 0.5, width = 0.8) + 
+  labs(title = NULL, x = NULL, y = paste0("Group Atlas Allometry (β)")) + theme_classic() +
+  theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
+  theme(axis.text.x = ggtext::element_markdown(size= 22, color = TextColor_ordered), 
+        axis.text.y = ggtext::element_markdown(size= 25, color = "black"), 
+        axis.title=ggtext::element_markdown(size = 25)) +
+  theme(axis.text.x = ggtext::element_markdown(angle = 65, hjust = 1, vjust = 0.5, margin = margin(t=-40)), #if numbers, change to 45 + hjust = 1
+    plot.margin = margin(t = 5.5, r = 5.5, b = 40, l = 5.5)) + # comment out if using numbers
+  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_beta)) + #change to pfn_inAscend_indx if using numbers
+  scale_y_continuous(
+    breaks = c(0.8, 0.9, 1.0, 1.1, 1.2, 1.3) - 1, #set breaks relative to 0
+    limits = c(0.8, 1.31) - 1, # match PFN results (more extreme betas)
+    labels = c(0.8, 0.9, 1.0, 1.1, 1.2, 1.3)  # set labels so betas are shown relative to 1
+  )
+
+Fig
+ggsave(paste0("../../Results/PNC_Group_Age/No_Euler/PNC_group_log_log_scaling_plot_0.8-1.3_bonf_no_euler_REML_netnames_gray.png"), width = 19, height = 16, dpi = 600, units = "cm");
+ggsave(paste0("../../Results/PNC_Group_Age/No_Euler/PNC_group_log_log_scaling_plot_0.8-1.3_bonf_no_euler_REML_netnames_gray.pdf"), device = cairo_pdf, width = 19, height = 16, dpi = 600, units = "cm");
+```
+
+## log-log models no age spline
+```{r}
+dout <- "../../Results/PNC_Group_No_age"
+dir.create(dout)
+
+summary(gam(log(PFN1_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML"))
+PFN1_gam_no_age<-gam(log(PFN1_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML")
+#tab_model(PFN1_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN1"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN1_area_TC_area_REML.doc", sep = ""))
+
+summary(gam(log(PFN2_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML"))
+PFN2_gam_no_age<-gam(log(PFN2_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML")
+#tab_model(PFN2_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN2"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN2_area_TC_area_REML.doc", sep = ""))
+
+summary(gam(log(PFN3_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML"))
+PFN3_gam_no_age<-gam(log(PFN3_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML")
+#tab_model(PFN3_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN3"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN3_area_TC_area_REML.doc", sep = ""))
+
+summary(gam(log(PFN4_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML"))
+PFN4_gam_no_age<-gam(log(PFN4_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML")
+#tab_model(PFN4_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN4"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN4_area_TC_area_REML.doc", sep = ""))
+
+summary(gam(log(PFN5_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML"))
+PFN5_gam_no_age<-gam(log(PFN5_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML")
+#tab_model(PFN5_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN5"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN5_area_TC_area_REML.doc", sep = ""))
+
+summary(gam(log(PFN6_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML"))
+PFN6_gam_no_age<-gam(log(PFN6_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML")
+#tab_model(PFN6_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN6"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN6_area_TC_area_REML.doc", sep = ""))
+
+summary(gam(log(PFN7_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML"))
+PFN7_gam_no_age<-gam(log(PFN7_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML")
+#tab_model(PFN7_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN7"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN7_area_TC_area_REML.doc", sep = ""))
+
+summary(gam(log(PFN8_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML"))
+PFN8_gam_no_age<-gam(log(PFN8_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML")
+#tab_model(PFN8_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN8"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN8_area_TC_area_REML.doc", sep = ""))
+
+summary(gam(log(PFN9_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML"))
+PFN9_gam_no_age<-gam(log(PFN9_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML")
+#tab_model(PFN9_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN9"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN9_area_TC_area_REML.doc", sep = ""))
+
+summary(gam(log(PFN10_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML"))
+PFN10_gam_no_age<-gam(log(PFN10_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML")
+#tab_model(PFN10_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN10"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN10_area_TC_area_REML.doc", sep = ""))
+
+summary(gam(log(PFN11_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML"))
+PFN11_gam_no_age<-gam(log(PFN11_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML")
+#tab_model(PFN11_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN11"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN11_area_TC_area_REML.doc", sep = ""))
+
+summary(gam(log(PFN12_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML"))
+PFN12_gam_no_age<-gam(log(PFN12_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML")
+#tab_model(PFN12_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN12"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN12_area_TC_area_REML.doc", sep = ""))
+
+summary(gam(log(PFN13_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML"))
+PFN13_gam_no_age<-gam(log(PFN13_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML")
+#tab_model(PFN13_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN13"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN13_area_TC_area_REML.doc", sep = ""))
+
+summary(gam(log(PFN14_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML"))
+PFN14_gam_no_age<-gam(log(PFN14_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML")
+#tab_model(PFN14_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN14"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN14_area_TC_area_REML.doc", sep = ""))
+
+summary(gam(log(PFN15_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML"))
+PFN15_gam_no_age<-gam(log(PFN15_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML")
+#tab_model(PFN15_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN15"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN15_area_TC_area_REML.doc", sep = ""))
+
+summary(gam(log(PFN16_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML"))
+PFN16_gam_no_age<-gam(log(PFN16_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML")
+#tab_model(PFN16_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN16"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN16_area_TC_area_REML.doc", sep = ""))
+
+summary(gam(log(PFN17_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML"))
+PFN17_gam_no_age<-gam(log(PFN17_soft_parcel_normed)~log(TC_area)+sex+euler+median_fd_combined,data=PNC_all,method = "REML")
+#tab_model(PFN17_gam_no_age,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD"),dv.labels=c("log PFN17"),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste(dout,"/PNC_Group_PFN17_area_TC_area_REML.doc", sep = ""))
+
+```
+
+# Get significance of beta scaling term (in no age models)
+```{r}
+dout <- "../../Results/PNC_Group_No_age"
+
+log_log_results_no_age_cov <- matrix(0,17,2)
+
+for (net in c(1:17)) {
+  beta <- summary(get(paste0("PFN",net,"_gam_no_age")))$p.table["log(TC_area)", "Estimate"]
+  SE <- summary(get(paste0("PFN",net,"_gam_no_age")))$p.table["log(TC_area)", "Std. Error"]
+  z_val <- (beta - 1) / SE # Null is beta = 1 (isometry, linear scaling)
+  #df <- df.residual(get(paste0("PFN",net,"_gam_no_age")))
+  log_log_results_no_age_cov[net,1] <- beta
+  log_log_results_no_age_cov[net,2] <- 2 * (1 - pnorm(abs(z_val))) #Wald test
+}
+
+pvals_bonf <- p.adjust(log_log_results_no_age_cov[,2], method = "bonf")
+#PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+log_log_wald_no_age_cov_bonf <-  data.frame(PFN = PFN_names, beta = log_log_results_no_age_cov[,1], pvals_bonf = pvals_bonf)
+
+#write_csv(log_log_wald_no_age_cov_bonf,paste0(dout,"/PNC_group_log_log_no_age_summary_results_bonf_REML_netnames.csv"))
+```
+
+### Bar plot of scaling (no age term):
+```{r}
+p_vec_adj<- log_log_wald_no_age_cov_bonf[,3]
+print(p_vec_adj)
+keep_p <- ifelse(p_vec_adj<.05,1,0)
+print(keep_p)
+
+betas_from_zero <- log_log_wald_no_age_cov_bonf[,2] - 1
+sorted_beta = rank(betas_from_zero);
+pfn_inAscend_indx <- c()
+for (t in c(1:17)) { pfn_inAscend_indx <- append(pfn_inAscend_indx,which(sorted_beta == t))} #if using numbers, switch all pfn_inAscend to pfn_inAscend_indx and comment out next line
+pfn_inAscend <- PFN_names[pfn_inAscend_indx]
+
+# Using 7 colors scheme for bar plot
+data <- data.frame(EffectSizes = as.numeric(betas_from_zero)) 
+data$EffectRank <- as.numeric(sorted_beta)
+# BorderColor1 is for colors of 1-17 network numbers(to lable the network numbers in a 1-17 order)
+BorderColor1 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E");
+				 
+# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN. ("black" is filled with black)
+BorderColor2 <- c("#FFFFFF", "#7499C2", "#F5BA2E", "#FFFFFF", "#00A131",
+                 "#FFFFFF", "#E443FF", "#FFFFFF", "#E443FF", "#FFFFFF",
+                 "#FFFFFF", "#FFFFFF", "#FFFFFF", "#00A131", "#FFFFFF", 
+                 "#FFFFFF", "#F5BA2E");
+
+# TextColor is for x-axis network label color
+TextColor <- c("#767676", "black", "black", "#767676", "black",
+              "#767676", "black", "#767676", "black", "#767676",
+              "#767676", "#767676", "#767676", "black", "#767676",
+              "#767676", "black");
+
+
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend_indx]
+BorderColor3 <- BorderColor2[pfn_inAscend_indx]
+TextColor_ordered <- TextColor[pfn_inAscend_indx]
+
+Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
+  geom_bar(stat = "identity", fill=BorderColor3[sorted_beta], 
+           colour = BorderColor[sorted_beta], linetype = "solid", linewidth = 0.5, width = 0.8) + 
+  labs(title = NULL, x = NULL, y = paste0("Group Atlas Allometry (β)")) + theme_classic() +
+  theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
+  theme(axis.text.x = ggtext::element_markdown(size= 22, color = TextColor_ordered), 
+        axis.text.y = ggtext::element_markdown(size= 25, color = "black"), 
+        axis.title=ggtext::element_markdown(size = 25)) +
+  theme(axis.text.x = ggtext::element_markdown(angle = 65, hjust = 1, vjust = 0.5, margin = margin(t=-40)), #if numbers, change to 45 + hjust = 1
+    plot.margin = margin(t = 5.5, r = 5.5, b = 40, l = 5.5)) + # comment out if using numbers
+  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_beta)) + #change to pfn_inAscend_indx if using numbers
+  scale_y_continuous(
+    breaks = c(0.8, 0.9, 1.0, 1.1, 1.2, 1.3) - 1, #set breaks relative to 0
+    limits = c(0.8, 1.31) - 1, # match PFN results (more extreme betas)
+    labels = c(0.8, 0.9, 1.0, 1.1, 1.2, 1.3)  # set labels so betas are shown relative to 1
+  )
+Fig
+ggsave(paste0("../../Results/PNC_Group_No_age/PNC_group_log_log_scaling_no_age_plot_0.8-1.3_bonf_REML_netnames_gray.png"), width = 19, height = 16, dpi = 600, units = "cm")
+Fig
+ggsave(paste0("../../Results/PNC_Group_No_age/PNC_group_log_log_scaling_no_age_plot_0.8-1.3_bonf_REML_netnames_gray.pdf"), device = cairo_pdf, width = 19, height = 16, dpi = 600, units = "cm")
+```

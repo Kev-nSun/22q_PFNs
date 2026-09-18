@@ -1,0 +1,132 @@
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(sjPlot)
+library(mgcv)
+```
+
+#Import areas and demographics
+```{r}
+PNC_PFNs_func_size <- read.csv("../../Inputs/PNC_template_summary_PFNs.csv") # n = 1482
+colnames(PNC_PFNs_func_size) <- gsub("TC_area", "template_TCA", colnames(PNC_PFNs_func_size))
+
+# Merge in TCA
+PNC_TC_and_PFNs_network_areas <- read.csv("../../Inputs/PNC_summary_PFNs.csv") # n = 1482
+PNC_PFNs_TCA_and_func_size <- merge(PNC_TC_and_PFNs_network_areas[,c("subject","TC_area")],PNC_PFNs_func_size,by="subject")
+
+# Merge in covariates
+colnames(PNC_PFNs_TCA_and_func_size)[1] <- "participant_id"
+PNC_demos <- read.csv("../../Inputs/filtered_demo_PNC.csv") #n = 1332
+PNC_all_size <- merge(PNC_PFNs_TCA_and_func_size,PNC_demos,by="participant_id") # n = 1332
+
+# Save out template func prop as well
+PNC_all_prop <- PNC_all_size
+PNC_all_prop[, c(7:23)] <- PNC_all_prop[, c(7:23)]/PNC_all_prop$template_TCA
+write.csv(PNC_all_prop,'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/PNC_data/PNC_all_PFN_template_func_prop.csv')
+
+PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-lh", "DM-A", "SM-rh", "DA-ant", "ParMem", "Auditory", "FP-B")
+```
+
+
+#Factorize sex
+```{r}
+PNC_all_size$sex <- factor(PNC_all_size$sex)
+```
+
+##  models of template func size scaling
+```{r}
+dout <- "../../Results/PNC_PFN_Func_Temp"
+dir.create(dout)
+
+func_models_size_normed <- list()
+
+for (net in c(1:17)) {
+  func_size <-  sprintf("PFN%02d%s",net,"_soft_parcel_normed")
+  func_model <- gam(log(get(func_size)) ~ log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all_size)
+  #print(summary(func_model))
+  print(tab_model(func_model,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c(paste0("Net ",net, "Functional Extent")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/log_log_temp_func_area_log_log_net_",net,"_lm.doc")))
+  func_models_size_normed[[net]] <- func_model #store all models in list
+}
+
+```
+
+##  template func size scaling significance results and fdr correction
+```{r}
+dout <- "../../Results/PNC_PFN_Func_Temp"
+
+func_size_normed_results <- matrix(0,17,2)
+
+for (net in c(1:17)) {
+  net_model <- func_models_size_normed[[net]]
+  func_size_normed_results[net,1] <- summary(net_model)$p.table["log(TC_area)", "Estimate"]
+  func_size_normed_results[net,2] <- summary(net_model)$p.table["log(TC_area)", "Pr(>|t|)"]
+}
+
+pvals_bonf <- p.adjust(func_size_normed_results[,2], method = "bonf")
+func_bonf_normed_results <-  data.frame(PFN = PFN_names, beta = func_size_normed_results[,1], pvals_bonf = pvals_bonf)
+
+write_csv(func_bonf_normed_results,paste0(dout,"/log_log_temp_func_area_summary_results.csv"))
+```
+
+### bar plot of scaling:
+```{r}
+p_vec_adj<- func_bonf_normed_results[,3]
+print(p_vec_adj)
+keep_p <- ifelse(p_vec_adj<.05,1,0)
+print(keep_p)
+
+func_size_beta <- func_bonf_normed_results[,2]
+sorted_beta = rank(func_size_beta);
+pfn_inAscend_indx <- c()
+for (t in c(1:17)) { pfn_inAscend_indx <- append(pfn_inAscend_indx,which(sorted_beta == t))} #if using numbers, switch all pfn_inAscend to pfn_inAscend_indx and comment out next line
+pfn_inAscend <- PFN_names[pfn_inAscend_indx]
+
+# Using 7 colors scheme for bar plot
+data <- data.frame(EffectSizes = as.numeric(func_size_beta)) 
+data$EffectRank <- as.numeric(sorted_beta)
+# BorderColor1 is for colors of 1-17 network numbers(to lable the network numbers in a 1-17 order)
+BorderColor1 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E");
+				 
+# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN. ("black" is filled with black)
+BorderColor2 <- c("#E76178", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                 "#FFFFFF", "#FFFFFF", "#E76178", "#E443FF", "#FFFFFF",
+                 "#FFFFFF", "#FFFFFF", "#FFFFFF", "#00A131", "#F5BA2E", 
+                 "#FFFFFF", "#FFFFFF");
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend_indx]
+BorderColor3 <- BorderColor2[pfn_inAscend_indx]
+
+# TextColor is for x-axis network label color
+TextColor <- c("black", "#767676", "#767676", "#767676", "#767676",
+              "#767676", "#767676", "black", "black", "#767676",
+              "#767676", "#767676", "#767676", "black", "black",
+              "#767676", "#767676");
+
+
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend_indx]
+BorderColor3 <- BorderColor2[pfn_inAscend_indx]
+TextColor_ordered <- TextColor[pfn_inAscend_indx]
+
+Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
+  geom_bar(stat = "identity", fill=BorderColor3[sorted_beta], 
+           colour = BorderColor[sorted_beta], linetype = "solid", linewidth = 0.5, width = 0.8) + 
+  labs(title = NULL, x = NULL, y = paste0("Scaling with TSA")) + theme_classic() +
+  theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
+  theme(axis.text.x = ggtext::element_markdown(size= 22, color = TextColor_ordered), 
+        axis.text.y = ggtext::element_markdown(size= 25, color = "black"), 
+        axis.title=ggtext::element_markdown(size = 25)) +
+  theme(axis.text.x = ggtext::element_markdown(angle = 65, hjust = 1, vjust = 0.5, margin = margin(t=-40)), #if numbers, change to 45 + hjust = 1
+    plot.margin = margin(t = 5.5, r = 5.5, b = 40, l = 5.5)) + # comment out if using numbers
+  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_beta)) #change to pfn_inAscend_indx if using numbers
+
+Fig
+ggsave(paste0("../../Results/PNC_PFN_Func_Temp/PNC_temp_func_log_log_scaling_plot_0.8-1.31_bonf_REML_netnames_gray.png"), width = 19, height = 16, dpi = 600, units = "cm");
+ggsave(paste0("../../Results/PNC_PFN_Func_Temp/PNC_temp_func_log_log_scaling_plot_0.8-1.31_bonf_REML_netnames_gray.pdf"), device = cairo_pdf, width = 19, height = 16, dpi = 600, units = "cm")
+```

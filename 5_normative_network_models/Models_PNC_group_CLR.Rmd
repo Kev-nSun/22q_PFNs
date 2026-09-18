@@ -1,0 +1,140 @@
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(sjPlot)
+library(mgcv)
+```
+
+#Import areas and demographics
+```{r}
+
+PNC_TC_and_group_network_areas <- read.csv("../../Inputs/PNC_summary_group.csv") # n = 1598
+colnames(PNC_TC_and_group_network_areas)[1] <- "participant_id"
+
+PNC_demos <- read.csv("../../Inputs/filtered_demo_PNC.csv") #n = 1332
+PNC_all <- merge(PNC_TC_and_group_network_areas,PNC_demos,by="participant_id") # n = 1332
+
+```
+
+#Factorize sex
+```{r}
+PNC_all$sex <- factor(PNC_all$sex)
+```
+
+
+# CLR calculation
+```{r}
+net_names <- paste0("PFN", 1:17, "_soft_parcel_normed")
+
+# Compute log(network_j_area / TC_area) for all 17 networks
+log_ratios <- log(PNC_all[net_names] / PNC_all$TC_area)
+
+# Calculate the row-wise mean across all 17 networks for each participant
+row_means <- rowMeans(log_ratios, na.rm = TRUE)
+
+# Calculate CLR for all networks
+clr_nets <- matrix(0,1332,17)
+for (net in c(1:17)) {
+  target_col <- paste0("PFN", net, "_soft_parcel_normed")
+  clr_nets[,net] <- log(PNC_all[[target_col]] / PNC_all$TC_area) - row_means
+}
+
+CLR_net_names <- paste0("CLR_PFN", 1:17)
+colnames(clr_nets) <- CLR_net_names
+clr_nets_df <- as.data.frame(clr_nets)
+
+PNC_all <- cbind(PNC_all, clr_nets_df)
+```
+
+
+## CLR models including age spline
+```{r}
+dout <- "../../Results/PNC_Group_Age/CLR"
+dir.create(dout)
+
+CLR_models <- list()
+
+for (net in c(1:17)) {
+  CLR_net <-  paste0("CLR_PFN",net)
+  CLR_model <- gam(get(CLR_net) ~ log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
+  print(summary(CLR_model))
+  print(tab_model(CLR_model,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c(paste0("Net ",net, "- CLR")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/PNC_Group_PFN",net,"_CLR.doc")))
+  CLR_models[[net]] <- CLR_model #store all models in list
+}
+```
+
+# Get significance of beta scaling term
+```{r}
+dout <- "../../Results/PNC_Group_Age/CLR"
+
+CLR_results <- matrix(0,17,2)
+
+for (net in c(1:17)) {
+  net_model <- CLR_models[[net]]
+  CLR_results[net,1] <- summary(net_model)$p.table["log(TC_area)", "Estimate"]
+  CLR_results[net,2] <- summary(net_model)$p.table["log(TC_area)", "Pr(>|t|)"]
+}
+
+pvals_bonf <- p.adjust(CLR_results[,2], method = "bonf")
+PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+CLR_bonf <-  data.frame(PFN = PFN_names, beta = CLR_results[,1], pvals_bonf = pvals_bonf)
+
+write_csv(CLR_bonf,paste0(dout,"/PNC_Group_CLR_summary_results_bonf.csv"))
+```
+
+### Bar plot of scaling:
+```{r}
+p_vec_adj<- CLR_bonf[,3]
+print(p_vec_adj)
+keep_p <- ifelse(p_vec_adj<.05,1,0)
+print(keep_p)
+
+betas <- CLR_bonf[,2]
+sorted_beta = rank(betas);
+pfn_inAscend <- c()
+for (t in c(1:17)) { pfn_inAscend <- append(pfn_inAscend,which(sorted_beta == t))}
+
+# Using 7 colors scheme for bar plot
+data <- data.frame(EffectSizes = as.numeric(betas)) 
+data$EffectRank <- as.numeric(sorted_beta)
+# BorderColor1 is for colors of 1-17 network numbers(to lable the network numbers in a 1-17 order)
+BorderColor1 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E");
+				 
+# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN. ("black" is filled with black)
+BorderColor2 <- c("#FFFFFF", "#7499C2", "#F5BA2E", "#FFFFFF", "#00A131",
+                 "#FFFFFF", "#E443FF", "#FFFFFF", "#E443FF", "#FFFFFF",
+                 "#FFFFFF", "#E76178", "#FFFFFF", "#00A131", "#FFFFFF", 
+                 "#4E31A8", "#F5BA2E");
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend]
+BorderColor3 <- BorderColor2[pfn_inAscend]
+
+# the line type for the 1-17 network bars (in a 1-17 order).  If a dashed line is needed for a bar, please change the value to "dashed".
+LineType <- c("dashed", "solid", "solid", "dashed", "solid",
+              "dashed", "solid", "dashed", "solid", "dashed",
+              "dashed", "solid", "dashed", "solid", "dashed",
+              "solid", "solid");
+
+Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
+  geom_bar(stat = "identity", fill=BorderColor3[sorted_beta], 
+           colour = BorderColor[sorted_beta], linetype = LineType, width = 0.8) + 
+  labs(title = "Anatomical Areal Scaling- CLR", x = "Networks", y = paste0("Group Atlas Allometry")) + theme_classic() +
+  theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
+  theme(axis.text.x = ggtext::element_markdown(size= 25, color = BorderColor), 
+        axis.text.y = ggtext::element_markdown(size= 25, color = "black"), 
+        axis.title=ggtext::element_markdown(size = 25)) +
+  theme(axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1)) +
+  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_beta)) +
+  scale_y_continuous(
+    limits = c(-0.2, 0.3) # match PFN results (more extreme betas)
+  )
+Fig
+ggsave(paste0("../../Results/PNC_Group_Age/CLR/PNC_group_CLR_scaling_plot_0.8-1.31_bonf.png"), width = 19, height = 16, dpi = 600, units = "cm")
+```
