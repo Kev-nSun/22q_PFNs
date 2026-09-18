@@ -5,7 +5,7 @@ import os, json
 from area_calc_functions_PNC import process_subject
 
 
-surf_dir = Path("/cbica/projects/bbl_22q/data/PNC_fsLR_32k_midthickness")
+surf_dir = Path("/cbica/projects/bbl_22q/data/derivatives_2025/PNC_fsLR_32k_midthickness")
 roi_dir  = Path("/cbica/projects/bbl_22q/analysis/allometry/inputs")
 net_dir  = Path("/cbica/projects/bbl_22q/analysis/allometry/inputs/PNC_group_atlas_normed")
 deriv_dir  = Path("/cbica/projects/bbl_22q/analysis/allometry/outputs")
