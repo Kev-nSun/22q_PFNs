@@ -1,0 +1,237 @@
+---
+title: "Models_22q_PFNs_func_template_size_cleaned"
+author: "Kevin Sun"
+date: "`10/31/2025`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(sjPlot)
+library(mgcv)
+```
+
+#Import areas and demographics
+```{r}
+#Read in func size data
+PNC_PFNs_func_size <- read.csv("../../Inputs/PNC_template_summary_PFNs.csv") # n = 1482
+del22q_PFNs_func_size <- read.csv("../../Inputs/22q_template_summary_PFNs.csv") # n = 114
+colnames(PNC_PFNs_func_size) <- gsub("_soft_parcel_normed","", x = colnames(PNC_PFNs_func_size))
+
+#merge 22q and PNC func data
+func_all <- rbind(PNC_PFNs_func_size,del22q_PFNs_func_size) # n = 1596
+colnames(func_all) <- gsub("TC_area", "template_TCA", colnames(func_all))
+
+#merge pooled data w covariate data to get  matched dataset
+matched_demo <- read.csv("../../Results/Demographic_matching/matched_all_demo_QC_median_fd_r1x3.csv") # n = 215
+matched_all <- merge(matched_demo,func_all,by="subject") # n = 215
+
+#Read in area data
+areas_PNC <- read.csv("../../Inputs/PNC_summary_group.csv") # n = 1598
+areas_22q <- read.csv("../../Inputs/22q_summary_group.csv") # n = 131
+areas_22q <- areas_22q[areas_22q$session != 8971,] #Remove ses-008971 of sub-016095, since this subject has 2 sessions -> n = 130
+TC_area_all <- rbind(areas_PNC[,c("subject","TC_area")],areas_22q[,c("subject","TC_area")]) # n = 1728
+
+matched_all <- merge(matched_all,TC_area_all,by="subject") # n = 215
+
+PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-lh", "DM-A", "SM-rh", "DA-ant", "ParMem", "Auditory", "FP-B")
+```
+
+
+#Factorize 22q status and sex
+```{r}
+matched_all$stat_22q <- factor(matched_all$stat_22q)
+matched_all$sex <- factor(matched_all$sex)
+matched_all$subclass <- factor(matched_all$subclass)
+```
+
+
+## Log-log func size models
+```{r}
+dout <- "../../Results/22q_PFN_Func_Temp/subclass"
+dir.create(dout)
+
+func_models_size_normed <- list()
+
+for (net in c(1:17)) {
+  func_size <- sprintf("PFN%02d",net)
+  func_model <- gam(log(get(func_size)) ~ stat_22q+log(TC_area)+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all)
+  print(tab_model(func_model,dv.labels=c(paste0("Net ",net, "Functional Extent")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/log_log_22q_temp_func_area_net_",net,"_subclass.doc")))
+  func_models_size_normed[[net]] <- func_model #store all models in list
+}
+```
+
+## Log-log func size model significance results and bonf correction
+```{r}
+dout <- "../../Results/22q_PFN_Func_Temp/subclass"
+
+func_size_normed_results <- matrix(0,17,2)
+
+for (net in c(1:17)) {
+  net_model <- func_models_size_normed[[net]]
+  func_size_normed_results[net,1] <- summary(net_model)$p.table["stat_22q1", "Estimate"]
+  func_size_normed_results[net,2] <- summary(net_model)$p.table["stat_22q1", "Pr(>|t|)"]
+}
+
+pvals_bonf <- p.adjust(func_size_normed_results[,2], method = "bonf")
+func_bonf_normed_results <-  data.frame(PFN = PFN_names, beta = func_size_normed_results[,1], pvals_bonf = pvals_bonf)
+
+write_csv(func_bonf_normed_results,paste0(dout,"/log_log_22q_temp_func_area_summary_results_subclass.csv"))
+```
+
+
+### Bar plot of normed and raw func size 22q effect w TCA:
+```{r}
+p_vec_adj<- func_bonf_normed_results[,3]
+print(p_vec_adj)
+keep_p <- ifelse(p_vec_adj<.05,1,0)
+print(keep_p)
+
+func_prop_beta <- (exp(func_bonf_normed_results[,2]) -1)*100
+sorted_func_prop_beta = rank(func_prop_beta);
+pfn_inAscend_indx <- c()
+for (t in c(1:17)) { pfn_inAscend_indx <- append(pfn_inAscend_indx,which(sorted_func_prop_beta == t))}
+pfn_inAscend <- PFN_names[pfn_inAscend_indx]
+
+# Using 7 colors scheme for bar plot
+data <- data.frame(EffectSizes = as.numeric(func_prop_beta)) 
+data$EffectRank <- as.numeric(sorted_func_prop_beta)
+# BorderColor1 is for colors of 1-17 network numbers(to lable the network numbers in a 1-17 order)
+BorderColor1 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E");
+				 
+# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN. ("black" is filled with black)
+BorderColor2 <- c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                 "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                 "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", 
+                 "#FFFFFF", "#FFFFFF");
+
+# TextColor is for network label color
+TextColor <- c("#767676", "#767676", "#767676", "#767676", "#767676",
+                 "#767676", "#767676", "#767676", "#767676", "#767676",
+                 "#767676", "#767676", "#767676", "#767676", "#767676", 
+                 "#767676", "#767676");
+
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend_indx]
+BorderColor3 <- BorderColor2[pfn_inAscend_indx]
+TextColor_ordered <- TextColor[pfn_inAscend_indx]
+
+Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
+  geom_bar(stat = "identity", fill=BorderColor3[sorted_func_prop_beta], 
+           colour = BorderColor[sorted_func_prop_beta], linetype = "solid", width = 0.8) + 
+  labs(title = NULL, x = NULL, y = paste0("Functional Extent Change (%)")) + 
+  theme_classic() +
+  theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
+  theme(axis.text.y = ggtext::element_markdown(size= 25, color = TextColor_ordered), 
+        axis.text.x = ggtext::element_markdown(size= 25, color = "black"),
+        axis.title=ggtext::element_markdown(size = 25)) +
+  #theme(axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1)) +
+  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_func_prop_beta)) +
+  scale_y_continuous(limits = c(-6, 5)) +
+  coord_flip()
+
+Fig
+ggsave(paste0("../../Results/22q_PFN_Func_Temp/subclass/log_log_22q_temp_func_area_plot_subclass_bonf.png"), width = 19, height = 16, dpi = 600, units = "cm")
+ggsave(paste0("../../Results/22q_PFN_Func_Temp/subclass/log_log_22q_temp_func_area_plot_subclass_bonf.pdf"), device = cairo_pdf, width = 19, height = 16, dpi = 600, units = "cm")
+
+```
+
+
+## Normed and raw func size models no TCA
+```{r}
+dout <- "../../Results/22q_PFN_Func_Temp/subclass"
+dir.create(dout)
+
+func_models_size_no_TCA_normed <- list()
+
+for (net in c(1:17)) {
+  func_size <- sprintf("PFN%02d",net)
+  func_model <- gam(log(get(func_size)) ~ stat_22q+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all)
+  print(tab_model(func_model,dv.labels=c(paste0("Net ",net, "Functional Representation")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/log_log_22q_temp_func_area_net_",net,"no_TCA_subclass.doc")))
+  func_models_size_no_TCA_normed[[net]] <- func_model #store all models in list
+}
+
+```
+
+## Normed and raw func size model no TCA significance results and fdr correction
+```{r}
+dout <- "../../Results/22q_PFN_Func_Temp/subclass"
+
+func_size_normed_results_no_TCA <- matrix(0,17,2)
+
+for (net in c(1:17)) {
+  net_model <- func_models_size_no_TCA_normed[[net]]
+  func_size_normed_results_no_TCA[net,1] <- summary(net_model)$p.table["stat_22q1", "Estimate"]
+  func_size_normed_results_no_TCA[net,2] <- summary(net_model)$p.table["stat_22q1", "Pr(>|t|)"]
+}
+
+pvals_bonf <- p.adjust(func_size_normed_results_no_TCA[,2], method = "bonf")
+func_bonf_normed_results_no_TCA <-  data.frame(PFN = PFN_names, beta = func_size_normed_results_no_TCA[,1], pvals_bonf = pvals_bonf)
+
+write_csv(func_bonf_normed_results_no_TCA,paste0(dout,"/log_log_22q_temp_func_area_no_TCA_summary_results_subclass.csv"))
+```
+
+### Bar plot of scaling, linear:
+```{r}
+p_vec_adj<- func_bonf_normed_results_no_TCA[,3]
+print(p_vec_adj)
+keep_p <- ifelse(p_vec_adj<.05,1,0)
+print(keep_p)
+
+func_prop_beta <- (exp(func_bonf_normed_results_no_TCA[,2]) -1)*100
+sorted_func_prop_beta = rank(func_prop_beta);
+pfn_inAscend_indx <- c()
+for (t in c(1:17)) { pfn_inAscend_indx <- append(pfn_inAscend_indx,which(sorted_func_prop_beta == t))}
+pfn_inAscend <- PFN_names[pfn_inAscend_indx]
+
+# Using 7 colors scheme for bar plot
+data <- data.frame(EffectSizes = as.numeric(func_prop_beta)) 
+data$EffectRank <- as.numeric(sorted_func_prop_beta)
+# BorderColor1 is for colors of 1-17 network numbers(to lable the network numbers in a 1-17 order)
+BorderColor1 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E");
+				 
+# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN. ("black" is filled with black)
+BorderColor2 <- c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                 "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                 "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", 
+                 "#FFFFFF", "#FFFFFF");
+
+# TextColor is for network label color
+TextColor <- c("#767676", "#767676", "#767676", "#767676", "#767676",
+                 "#767676", "#767676", "#767676", "#767676", "#767676",
+                 "#767676", "#767676", "#767676", "#767676", "#767676", 
+                 "#767676", "#767676");
+
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend_indx]
+BorderColor3 <- BorderColor2[pfn_inAscend_indx]
+TextColor_ordered <- TextColor[pfn_inAscend_indx]
+
+Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
+  geom_bar(stat = "identity", fill=BorderColor3[sorted_func_prop_beta], 
+           colour = BorderColor[sorted_func_prop_beta], linetype = "solid", width = 0.8) + 
+  labs(title = NULL, x = NULL, y = paste0("Functional Extent Change (%)")) + 
+  theme_classic() +
+  theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
+  theme(axis.text.y = ggtext::element_markdown(size= 25, color = TextColor_ordered), 
+        axis.text.x = ggtext::element_markdown(size= 25, color = "black"),
+        axis.title=ggtext::element_markdown(size = 25)) +
+  #theme(axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1)) +
+  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_func_prop_beta)) +
+  scale_y_continuous(limits = c(-6, 5)) +
+  coord_flip()
+
+Fig
+ggsave(paste0("../../Results/22q_PFN_Func_Temp/subclass/log_log_22q_temp_func_area_no_TCA_plot_subclass_bonf.png"), width = 19, height = 16, dpi = 600, units = "cm")
+ggsave(paste0("../../Results/22q_PFN_Func_Temp/subclass/log_log_22q_temp_func_area_no_TCA_plot_subclass_bonf.pdf"), device = cairo_pdf, width = 19, height = 16, dpi = 600, units = "cm")
+```
+

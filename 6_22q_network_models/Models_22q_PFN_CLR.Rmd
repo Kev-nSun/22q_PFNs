@@ -1,0 +1,161 @@
+---
+title: "Models_22q_PFN"
+author: "Kevin Sun"
+date: "`1/20/2026`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(sjPlot)
+library(mgcv)
+```
+
+#Import areas and demographics
+```{r}
+#Read in area data
+areas_PNC <- read.csv("../../Inputs/PNC_summary_PFNs.csv") # n = 1482
+colnames(areas_PNC) <- gsub("_soft_parcel_normed", "", colnames(areas_PNC))
+areas_22q <- read.csv("../../Inputs/22q_summary_PFNs.csv") # n = 115
+areas_22q <- areas_22q[areas_22q$session != 8971,] #Remove ses-008971 of sub-016095, since this subject has 2 sessions -> n = 114
+
+#Pool 22q and PNC area data
+areas_22q <- areas_22q[, -2] #remove session column
+areas_all <- rbind(areas_PNC,areas_22q) # n = 1596
+
+#merge pooled areas with matched and pooled demographic dataset
+matched_demo <- read.csv("../../Results/Demographic_matching/matched_all_demo_QC_median_fd_r1x3.csv") # n = 215
+matched_all <- merge(matched_demo,areas_all,by="subject") # n = 215
+
+#write_csv(matched_all,paste0("../../Inputs/22q_PNC_matched_all.csv"))
+
+PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-lh", "DM-A", "SM-rh", "DA-ant", "ParMem", "Auditory", "FP-B")
+
+```
+
+#Factorize 22q status and sex
+```{r}
+matched_all$stat_22q <- factor(matched_all$stat_22q)
+matched_all$sex <- factor(matched_all$sex)
+matched_all$subclass <- factor(matched_all$subclass)
+```
+
+# CLR calculation
+```{r}
+net_names <- sprintf("PFN%02d", 1:17)
+
+# Compute log(network_j_area / TC_area) for all 17 networks
+log_ratios <- log(matched_all[net_names] / matched_all$TC_area)
+
+# Calculate the row-wise mean across all 17 networks for each participant
+row_means <- rowMeans(log_ratios, na.rm = TRUE)
+
+# Calculate CLR for all networks
+clr_nets <- matrix(0,215,17)
+for (net in c(1:17)) {
+  target_col <- sprintf("PFN%02d", net)
+  clr_nets[,net] <- log(matched_all[[target_col]] / matched_all$TC_area) - row_means
+}
+
+CLR_net_names <- paste0("CLR_PFN", 1:17)
+colnames(clr_nets) <- CLR_net_names
+clr_nets_df <- as.data.frame(clr_nets)
+
+matched_all <- cbind(matched_all, clr_nets_df)
+```
+
+## 22q with TCA + euler + age spline
+```{r}
+dout <- "../../Results/22q_PFN_Age/CLR_subclass"
+dir.create(dout)
+
+CLR_models <- list()
+
+for (net in c(1:17)) {
+  CLR_net <- paste0("CLR_PFN", net)
+  CLR_model <- gam(get(CLR_net) ~ stat_22q+log(TC_area)+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all,
+                    method = "REML")
+  print(tab_model(CLR_model,dv.labels=c(paste0("PFN ",net, " -CLR")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/22q_CLR_PFN_",net,"_subclass.doc")))
+  CLR_models[[net]] <- CLR_model #store all models in list
+}
+
+```
+
+# Save out betas and fdr p-vals of 22q term
+```{r}
+dout <- "../../Results/22q_PFN_Age/CLR_subclass"
+
+CLR_results <- matrix(0,17,2)
+
+for (net in c(1:17)) {
+  net_model <- CLR_models[[net]]
+  CLR_results[net,1] <- summary(net_model)$p.table["stat_22q1", "Estimate"]
+  CLR_results[net,2] <- summary(net_model)$p.table["stat_22q1", "Pr(>|t|)"]
+}
+
+pvals_bonf <- p.adjust(CLR_results[,2], method = "bonf")
+CLR_bonf <-  data.frame(PFN = PFN_names, beta = CLR_results[,1], pvals_bonf = pvals_bonf)
+
+write_csv(CLR_bonf,paste0(dout,"/22q_PFN_CLR_summary_results_subclass_bonf.csv"))
+```
+
+
+### Bar plot of 22q effect- CLR
+```{r}
+p_vec_adj<- CLR_bonf[,3]
+print(p_vec_adj)
+keep_p <- ifelse(p_vec_adj<.05,1,0)
+print(keep_p)
+
+betas <- CLR_bonf[,2]
+sorted_beta = rank(betas);
+pfn_inAscend_indx <- c()
+for (t in c(1:17)) { pfn_inAscend_indx <- append(pfn_inAscend_indx,which(sorted_beta == t))}
+pfn_inAscend <- PFN_names[pfn_inAscend_indx]
+
+# Using 7 colors scheme for bar plot
+data <- data.frame(EffectSizes = as.numeric(betas)) 
+data$EffectRank <- as.numeric(sorted_beta)
+# BorderColor1 is for colors of 1-17 network numbers(to lable the network numbers in a 1-17 order)
+BorderColor1 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E");
+				 
+# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN. ("black" is filled with black)
+BorderColor2 <- c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                 "#AF33AD", "#FFFFFF", "#FFFFFF", "#E443FF", "#FFFFFF",
+                 "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", 
+                 "#FFFFFF", "#FFFFFF");
+
+# TextColor is for network label color
+TextColor <- c("#767676", "#767676", "#767676", "#767676", "#767676",
+                 "black", "#767676", "#767676", "black", "#767676",
+                 "#767676", "#767676", "#767676", "#767676", "#767676", 
+                 "#767676", "#767676");
+
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend_indx]
+BorderColor3 <- BorderColor2[pfn_inAscend_indx]
+TextColor_ordered <- TextColor[pfn_inAscend_indx]
+
+Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
+  geom_bar(stat = "identity", fill=BorderColor3[sorted_beta], 
+           colour = BorderColor[sorted_beta], linetype = "solid", width = 0.8) + 
+  labs(title = NULL, x = NULL, y = paste0("22q11.2DS Effect")) + theme_classic() +
+  theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
+  theme(axis.text.y = ggtext::element_markdown(size= 25, color = TextColor_ordered), 
+        axis.text.x = ggtext::element_markdown(size= 25, color = "black"), 
+        axis.title=ggtext::element_markdown(size = 25)) +
+  #theme(axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1)) +
+  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_beta)) +
+  scale_y_continuous(limits = c(-0.061, 0.05)) +
+  coord_flip()
+
+Fig
+ggsave(paste0("../../Results/22q_PFN_Age/CLR_subclass/22q_PFN_TCA_CLR_subclass_bonf_flipped.png"), width = 19, height = 16, dpi = 600, units = "cm")
+ggsave(paste0("../../Results/22q_PFN_Age/CLR_subclass/22q_PFN_TCA_CLR_subclass_bonf_flipped.pdf"), device = cairo_pdf, width = 19, height = 16, dpi = 600, units = "cm")
+```

@@ -1,0 +1,614 @@
+---
+title: "Models_22q_group"
+author: "Kevin Sun"
+date: "`1/20/2026`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(sjPlot)
+library(mgcv)
+```
+
+#Import areas and demographics
+```{r}
+#Read in area data
+areas_PNC <- read.csv("../../Inputs/PNC_summary_group.csv") # n = 1598
+colnames(areas_PNC) <- gsub("_soft_parcel_normed", "", colnames(areas_PNC))
+areas_22q <- read.csv("../../Inputs/22q_summary_group.csv") # n = 131
+areas_22q <- areas_22q[areas_22q$session != 8971,] #Remove ses-008971 of sub-016095, since this subject has 2 sessions -> n = 130
+
+#Pool 22q and PNC area data
+areas_22q <- areas_22q[, -2] #remove session column
+areas_all <- rbind(areas_PNC,areas_22q) # n = 1728
+
+#merge pooled areas with matched and pooled demographic dataset
+matched_demo <- read.csv("../../Results/Demographic_matching/matched_all_demo_QC_median_fd_r1x3.csv") # n = 215
+matched_all <- merge(matched_demo,areas_all,by="subject") # n = 215
+
+PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-lh", "DM-A", "SM-rh", "DA-ant", "ParMem", "Auditory", "FP-B")
+
+```
+
+#Factorize 22q status and sex
+```{r}
+matched_all$stat_22q <- factor(matched_all$stat_22q)
+matched_all$sex <- factor(matched_all$sex)
+matched_all$subclass <- factor(matched_all$subclass)
+```
+
+## TCA distribution
+```{r}
+dout <- "../../Results/Area_stats/"
+dir.create(dout)
+
+matched_PNC <- matched_all[matched_all$stat_22q==0,]
+matched_22q <- matched_all[matched_all$stat_22q==1,]
+
+mean_TC_area_PNC <- mean(matched_PNC$TC_area)
+mean_TC_area_22q <- mean(matched_22q$TC_area)
+
+sd_TC_area_PNC <- sd(matched_PNC$TC_area)
+sd_TC_area_22q <- sd(matched_22q$TC_area)
+
+TC_area_t_test <- t.test(matched_PNC$TC_area, matched_22q$TC_area, alternative = "two.sided", var.equal = FALSE)
+TC_area_t_val <- TC_area_t_test$statistic
+TC_area_p_val <- TC_area_t_test$p.value
+
+Fig <- ggplot(matched_PNC, aes(x = TC_area)) +
+  geom_histogram(binwidth = 10000,    # Width of the bins
+                 fill = "black", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  geom_histogram(data = matched_22q, aes(x = TC_area), 
+                 binwidth = 10000,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "gray", # Border color of the bars
+                 alpha = 0.7) + 
+  labs(title = paste0("22q11DS vs PNC Total Cortical Area Distribution"),
+       x = "Cortical Area (mm²)",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5))
+print(Fig)
+ggsave(paste0(dout,"/22q_v_PFN_TCA_dist.png"), width = 19, height = 16, dpi = 600, units = "cm")
+
+```
+
+## Get raw effect of 22q on log TC Area
+``` {r}
+dout <- "../../Results/22q_TCA"
+dir.create(dout)
+
+model_22q_TCA_log <- gam(log(TC_area) ~ stat_22q+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all,method = "REML")
+print(summary(model_22q_TCA_log))
+#print(tab_model(model_22q_TCA_log,digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/22q_Effect_on_TCA_log_REML_subclass.doc")))
+
+```
+
+## Get raw effect of 22q on TC Area
+``` {r}
+dout <- "../../Results/22q_TCA"
+dir.create(dout)
+
+model_22q_TCA_raw <- gam(TC_area ~ stat_22q+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all,method = "REML")
+print(summary(model_22q_TCA_raw))
+#print(tab_model(model_22q_TCA_raw,digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/Raw_22q_Effect_on_TCA_REML_subclass.doc")))
+
+```
+
+# Scatterplot of 22q Impact on TCA Raw
+```{r}
+dout <- "../../Results/22q_TCA"
+dir.create(dout)
+
+gam_model <- model_22q_TCA_raw
+model_data <- gam_model$model
+
+#Get model-based predictions by getting model-predicted TCA values for each individual's cov profile under both 22q and HC status, then average for each
+prediction_data <- do.call(
+  rbind,
+  lapply(c("1", "0"), function(group_value) {
+
+    nd <- model_data
+
+    nd$stat_22q <- factor(
+      group_value,
+      levels = levels(model_data$stat_22q)
+    )
+
+    nd$.group <- group_value
+    nd
+  })
+)
+
+X <- predict(
+  gam_model,
+  newdata = prediction_data,
+  type = "lpmatrix",
+  exclude = "s(subclass)" #exclude subclass from prediction
+)
+
+beta <- coef(gam_model)
+Vb <- vcov(gam_model)
+
+group_rows <- split(
+  seq_len(nrow(prediction_data)),
+  prediction_data$.group
+)
+
+adj_22q_pred <- do.call(
+  rbind,
+  lapply(names(group_rows), function(group_value) {
+
+    rows <- group_rows[[group_value]]
+
+    mean_X <- colMeans(
+      X[rows, , drop = FALSE]
+    )
+
+    estimate <- drop(mean_X %*% beta)
+
+    standard_error <- sqrt(
+      drop(mean_X %*% Vb %*% mean_X)
+    )
+
+    data.frame(
+      stat_22q = group_value,
+      predicted = estimate,
+      conf.low = estimate - 1.96 * standard_error,
+      conf.high = estimate + 1.96 * standard_error
+    )
+  })
+)
+
+adj_22q_pred$stat_22q <- factor(
+  adj_22q_pred$stat_22q,
+  levels = c("1", "0"),
+  labels = c("22q11DS", "PNC")
+)
+
+plot_data <- matched_all
+
+plot_data$stat_22q <- factor(
+  as.character(plot_data$stat_22q),
+  levels = c("1", "0"),
+  labels = c("22q11DS", "PNC")
+)
+
+Fig <- ggplot() +
+  geom_jitter(
+    data = plot_data,
+    aes(
+      x = stat_22q,
+      y = TC_area / 1000
+    ),
+    width = 0.05,
+    alpha = 0.15,
+    size = 1.8,
+    seed = 42
+  ) +
+  geom_errorbar(
+    data = adj_22q_pred,
+    aes(
+      x = stat_22q,
+      ymin = conf.low / 1000,
+      ymax = conf.high / 1000
+    ),
+    width = 0.7,
+    color = "red",
+    linewidth = 1
+  ) +
+  geom_point(
+    data = adj_22q_pred,
+    aes(
+      x = stat_22q,
+      y = predicted / 1000
+    ),
+    size = 2.5,
+    alpha = 1,
+    colour = "red"
+  ) +
+  labs(
+    x = NULL,
+    y = expression(
+      "Total Cortical Area (1000 mm²)"
+    )
+  ) +
+  theme_classic()  +
+  theme(
+      axis.text.x = element_text(size = 25, color = "black"),
+      axis.text.y = element_text(size = 25, color = "black"),
+      axis.title.y = element_text(margin = margin(r = 5)),
+      axis.title  = element_text(size = 25)
+  )  +
+  coord_flip()
+
+print(Fig)
+ggsave(paste0(dout,"/22q_impact_on_TCA_adj_raw_binary_plot_ggavg_REML_flipped_subclass.png"), width = 20, height = 6, dpi = 600, units = "cm")
+ggsave(paste0(dout,"/22q_impact_on_TCA_adj_raw_binary_plot_ggavg_REML_flipped_subclass.pdf"), device = cairo_pdf, width = 20, height = 6, dpi = 600, units = "cm")
+
+```
+
+## Get sex interaction effect of 22q on TC Area
+``` {r}
+dout <- "../../Results/22q_TCA"
+dir.create(dout)
+
+model_22q_TCA_raw_sex_int <- gam(TC_area ~ stat_22q+sex+stat_22q*sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all,method = "REML")
+print(summary(model_22q_TCA_raw_sex_int))
+print(tab_model(model_22q_TCA_raw_sex_int,digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/Raw_22q_Effect_on_TCA_REML_sex_int_subclass.doc")))
+
+```
+
+## 22q with euler + age spline, no TC_area
+```{r}
+dout <- "../../Results/22q_Group_Age/No_TCA/subclass/"
+dir.create(dout)
+
+models_no_TCA <- list()
+
+for (net in c(1:17)) {
+  PFN_area <- paste0("PFN",net)
+  model_no_TCA <- gam(log(get(PFN_area)) ~ stat_22q+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all,method = "REML")
+  print(tab_model(model_no_TCA,dv.labels=c(paste0("PFN ",net, " Area")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/22q_Group_no_TCA_PFN_",net,"_REML_subclass.doc")))
+  models_no_TCA[[net]] <- model_no_TCA #store all models in list
+}
+
+```
+
+# Save out betas and bonf p-vals of 22q term
+```{r}
+dout <- "../../Results/22q_Group_Age/No_TCA/subclass"
+
+no_TCA_mod_results <- matrix(0,17,2)
+
+for (net in c(1:17)) {
+  net_model <- models_no_TCA[[net]]
+  no_TCA_mod_results[net,1] <- summary(net_model)$p.table["stat_22q1", "Estimate"]
+  no_TCA_mod_results[net,2] <- summary(net_model)$p.table["stat_22q1", "Pr(>|t|)"]
+}
+
+pvals_bonf <- p.adjust(no_TCA_mod_results[,2], method = "bonf")
+#PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+no_TCA_bonf <-  data.frame(PFN = PFN_names, beta = no_TCA_mod_results[,1], pvals_bonf = pvals_bonf)
+
+write_csv(no_TCA_bonf,paste0(dout,"/22q_Group_no_TCA_age_summary_results_bonf_REML_netnames_subclass.csv"))
+```
+
+
+### Bar plot of 22q effect, no TCA (EXP AND REL TO 1 * 100):
+```{r}
+p_vec_adj<- no_TCA_bonf[,3]
+print(p_vec_adj)
+keep_p <- ifelse(p_vec_adj<.05,1,0)
+print(keep_p)
+
+betas <- (exp(no_TCA_bonf[,2]) -1)*100 # EXP AND REL TO 1 * 100 for percent
+sorted_beta = rank(betas);
+pfn_inAscend_indx <- c()
+for (t in c(1:17)) { pfn_inAscend_indx <- append(pfn_inAscend_indx,which(sorted_beta == t))} #if using numbers, switch all pfn_inAscend to pfn_inAscend_indx and comment out next line
+pfn_inAscend <- PFN_names[pfn_inAscend_indx]
+
+# Using 7 colors scheme for bar plot
+data <- data.frame(EffectSizes = as.numeric(betas)) 
+data$EffectRank <- as.numeric(sorted_beta)
+# BorderColor1 is for colors of 1-17 network numbers(to lable the network numbers in a 1-17 order)
+BorderColor1 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E");
+				 
+# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN. ("black" is filled with black)
+BorderColor2 <- c("#FFFFFF", "#7499C2", "#F5BA2E", "#FFFFFF", "#00A131",
+                 "#AF33AD", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#AF33AD",
+                 "#7499C2", "#E76178", "#FFFFFF", "#00A131", "#F5BA2E", 
+                 "#FFFFFF", "#FFFFFF");
+
+# TextColor is for network label color
+TextColor <- c("#767676", "black", "black", "#767676", "black",
+                 "black", "#767676", "#767676", "#767676", "black",
+                 "black", "black", "#767676", "black", "black", 
+                 "#767676", "#767676");
+
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend_indx]
+BorderColor3 <- BorderColor2[pfn_inAscend_indx]
+TextColor_ordered <- TextColor[pfn_inAscend_indx]
+
+Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
+  geom_bar(stat = "identity", fill=BorderColor3[sorted_beta], 
+           colour = BorderColor[sorted_beta], linetype = "solid", width = 0.8) + 
+  labs(title = NULL, x = NULL, y = paste0("Group Atlas Areal Change (%)")) + theme_classic() +
+  theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
+  theme(axis.text.y = ggtext::element_markdown(size= 21, color = TextColor_ordered), 
+        axis.text.x = ggtext::element_markdown(size= 25, color = "black"), 
+        axis.title=ggtext::element_markdown(size = 25)) +
+  #theme(axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1)) +
+  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_beta)) +
+  scale_y_continuous(limits = c(-11, 0)) +
+  coord_flip()
+
+Fig
+ggsave(paste0("../../Results/22q_Group_Age/No_TCA/subclass/22q_Group_no_TCA_plot_REML_bonf_EXP_REL_100perc_subclass.png"), width = 19, height = 16, dpi = 600, units = "cm");
+ggsave(paste0("../../Results/22q_Group_Age/No_TCA/subclass/22q_Group_no_TCA_plot_REML_bonf_EXP_REL_100perc_subclass.pdf"), device = cairo_pdf, width = 19, height = 16, dpi = 600, units = "cm");
+```
+
+## 22q with euler + age spline
+```{r}
+dout <- "../../Results/22q_Group_Age/subclass"
+dir.create(dout)
+
+models_euler_age <- list()
+
+for (net in c(1:17)) {
+  PFN_area <- paste0("PFN",net)
+  model_euler_age <- gam(log(get(PFN_area)) ~ stat_22q+log(TC_area)+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all,method = "REML")
+  print(tab_model(model_euler_age,dv.labels=c(paste0("PFN ",net, " Area")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/22q_Group_TCA_euler_age_PFN_",net,"_REML_subclass.doc")))
+  models_euler_age[[net]] <- model_euler_age #store all models in list
+}
+
+```
+
+# Save out betas and bonf p-vals of 22q term
+```{r}
+dout <- "../../Results/22q_Group_Age/subclass"
+
+euler_age_mod_results <- matrix(0,17,2)
+
+for (net in c(1:17)) {
+  net_model <- models_euler_age[[net]]
+  euler_age_mod_results[net,1] <- summary(net_model)$p.table["stat_22q1", "Estimate"]
+  euler_age_mod_results[net,2] <- summary(net_model)$p.table["stat_22q1", "Pr(>|t|)"]
+}
+
+pvals_bonf <- p.adjust(euler_age_mod_results[,2], method = "bonf")
+#PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+euler_age_bonf <-  data.frame(PFN = PFN_names, beta = euler_age_mod_results[,1], pvals_bonf = pvals_bonf)
+
+write_csv(euler_age_bonf,paste0(dout,"/22q_Group_TCA_euler_age_summary_results_bonf_REML_netnames_subclass.csv"))
+```
+
+
+### Bar plot of 22q effect, euler + age (EXP AND REL TO 1 * 100):
+```{r}
+p_vec_adj<- euler_age_bonf[,3]
+print(p_vec_adj)
+keep_p <- ifelse(p_vec_adj<.05,1,0)
+print(keep_p)
+
+betas <- (exp(euler_age_bonf[,2]) - 1)*100 # EXP AND REL TO 1
+sorted_beta = rank(betas);
+pfn_inAscend <- c()
+for (t in c(1:17)) { pfn_inAscend <- append(pfn_inAscend,which(sorted_beta == t))} #if using numbers, switch all pfn_inAscend to pfn_inAscend_indx and comment out next line
+pfn_inAscend <- PFN_names[pfn_inAscend_indx]
+
+
+# Using 7 colors scheme for bar plot
+data <- data.frame(EffectSizes = as.numeric(betas)) 
+data$EffectRank <- as.numeric(sorted_beta)
+# BorderColor1 is for colors of 1-17 network numbers(to lable the network numbers in a 1-17 order)
+BorderColor1 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E");
+				 
+# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN. ("black" is filled with black)
+BorderColor2 <- c("#E76178", "#FFFFFF", "#FFFFFF", "#7499C2", "#00A131",
+                 "#AF33AD", "#FFFFFF", "#E76178", "#E443FF", "#AF33AD",
+                 "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", 
+                 "#4E31A8", "#F5BA2E");
+
+# TextColor is for network label color
+TextColor <- c("black", "#767676", "#767676", "black", "black",
+                 "black", "#767676", "black", "black", "black",
+                 "#767676", "#767676", "#767676", "#767676", "#767676", 
+                 "black", "black");
+
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend_indx]
+BorderColor3 <- BorderColor2[pfn_inAscend_indx]
+TextColor_ordered <- TextColor[pfn_inAscend_indx]
+
+Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
+  geom_bar(stat = "identity", fill=BorderColor3[sorted_beta], 
+           colour = BorderColor[sorted_beta], linetype = "solid", width = 0.8) + 
+  labs(title = NULL, x = NULL, y = paste0("Group Atlas Areal Change (%)")) + theme_classic() +
+  theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
+  theme(axis.text.y = ggtext::element_markdown(size= 21, color = TextColor_ordered), 
+        axis.text.x = ggtext::element_markdown(size= 25, color = "black"), 
+        axis.title=ggtext::element_markdown(size = 25)) +
+  #theme(axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1)) +
+  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_beta)) +
+  scale_y_continuous(limits = c(-6, 5)) +
+  coord_flip()
+
+Fig
+ggsave(paste0("../../Results/22q_Group_Age/subclass/22q_Group_TCA_euler_age_plot_REML_bonf_EXP_REL_100perc_subclass.png"), width = 19, height = 16, dpi = 600, units = "cm");
+ggsave(paste0("../../Results/22q_Group_Age/subclass/22q_Group_TCA_euler_age_plot_REML_bonf_EXP_REL_100perc_subclass.pdf"), device = cairo_pdf, width = 19, height = 16, dpi = 600, units = "cm");
+```
+
+## models 22q, no age spline
+```{r}
+dout <- "../../Results/22q_Group_No_age/subclass"
+dir.create(dout)
+
+models_no_age <- list()
+
+for (net in c(1:17)) {
+  PFN_area <- paste0("PFN",net)
+  model_no_age <- gam(log(get(PFN_area)) ~ stat_22q+log(TC_area)+sex+euler+median_fd_combined+s(subclass, bs = "re"),data=matched_all,method = "REML")
+  models_no_age[[net]] <- model_no_age #store all models in list
+}
+
+```
+
+# Save out betas and bonf p-vals of 22q term (no age)
+```{r}
+dout <- "../../Results/22q_Group_No_age/subclass"
+
+no_age_mod_results <- matrix(0,17,2)
+
+for (net in c(1:17)) {
+  net_model <- models_no_age[[net]]
+  no_age_mod_results[net,1] <- summary(net_model)$p.table["stat_22q1", "Estimate"]
+  no_age_mod_results[net,2] <- summary(net_model)$p.table["stat_22q1", "Pr(>|t|)"]
+}
+
+pvals_bonf <- p.adjust(no_age_mod_results[,2], method = "bonf")
+#PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+no_age_bonf <-  data.frame(PFN = PFN_names, beta = no_age_mod_results[,1], pvals_bonf = pvals_bonf)
+
+write_csv(no_age_bonf,paste0(dout,"/22q_Group_TCA_no_age_summary_results_bonf_REML_netnames_subclass.csv"))
+```
+
+### Bar plot of 22q effect, no age:
+```{r}
+p_vec_adj<- no_age_bonf[,3]
+print(p_vec_adj)
+keep_p <- ifelse(p_vec_adj<.05,1,0)
+print(keep_p)
+
+betas <- (exp(euler_age_bonf[,2]) - 1)*100 # EXP AND REL TO 1
+sorted_beta = rank(betas);
+pfn_inAscend_indx <- c()
+for (t in c(1:17)) { pfn_inAscend_indx <- append(pfn_inAscend_indx,which(sorted_beta == t))} #if using numbers, switch all pfn_inAscend to pfn_inAscend_indx and comment out next line
+pfn_inAscend <- PFN_names[pfn_inAscend_indx]
+
+# Using 7 colors scheme for bar plot
+data <- data.frame(EffectSizes = as.numeric(betas)) 
+data$EffectRank <- as.numeric(sorted_beta)
+# BorderColor1 is for colors of 1-17 network numbers(to lable the network numbers in a 1-17 order)
+BorderColor1 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E");
+				 
+# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN. ("black" is filled with black)
+BorderColor2 <- c("#E76178", "#FFFFFF", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#FFFFFF", "#E76178", "#E443FF", "#AF33AD",
+                 "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", 
+                 "#4E31A8", "#F5BA2E");
+
+# TextColor is for network label color
+TextColor <- c("black", "#767676", "black", "black", "black",
+                 "black", "#767676", "black", "black", "black",
+                 "#767676", "#767676", "#767676", "#767676", "#767676", 
+                 "black", "black");
+
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend_indx]
+BorderColor3 <- BorderColor2[pfn_inAscend_indx]
+TextColor_ordered <- TextColor[pfn_inAscend_indx]
+
+Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
+  geom_bar(stat = "identity", fill=BorderColor3[sorted_beta], 
+           colour = BorderColor[sorted_beta], linetype = "solid", width = 0.8) + 
+  labs(title = NULL, x = NULL, y = paste0("Group Atlas Areal Change (%)")) + theme_classic() +
+  theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
+  theme(axis.text.y = ggtext::element_markdown(size= 21, color = TextColor_ordered), 
+        axis.text.x = ggtext::element_markdown(size= 25, color = "black"), 
+        axis.title=ggtext::element_markdown(size = 25)) +
+  #theme(axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1)) +
+  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_beta)) +
+  scale_y_continuous(limits = c(-6, 5)) +
+  coord_flip()
+
+Fig
+ggsave(paste0("../../Results/22q_Group_No_Age/subclass/22q_Group_TCA_no_age_plot_REML_bonf_EXP_REL_100perc_subclass.png"), width = 19, height = 16, dpi = 600, units = "cm");
+ggsave(paste0("../../Results/22q_Group_No_Age/subclass/22q_Group_TCA_no_age_plot_REML_bonf_EXP_REL_100perc_subclass.pdf"), device = cairo_pdf, width = 19, height = 16, dpi = 600, units = "cm");
+```
+
+## models 22q, no euler
+```{r}
+dout <- "../../Results/22q_Group_Age/No_euler/subclass"
+dir.create(dout)
+
+models_no_euler <- list()
+
+for (net in c(1:17)) {
+  PFN_area <- paste0("PFN",net)
+  model_no_euler <- gam(log(get(PFN_area)) ~ stat_22q+log(TC_area)+sex+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all,method = "REML")
+  models_no_euler[[net]] <- model_no_euler #store all models in list
+}
+
+```
+
+# Save out betas and bonf p-vals of 22q term (no euler)
+```{r}
+dout <- "../../Results/22q_Group_Age/No_euler/subclass"
+
+no_euler_mod_results <- matrix(0,17,2)
+
+for (net in c(1:17)) {
+  net_model <- models_no_euler[[net]]
+  no_euler_mod_results[net,1] <- summary(net_model)$p.table["stat_22q1", "Estimate"]
+  no_euler_mod_results[net,2] <- summary(net_model)$p.table["stat_22q1", "Pr(>|t|)"]
+}
+
+pvals_bonf <- p.adjust(no_euler_mod_results[,2], method = "bonf")
+#PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+no_euler_bonf <-  data.frame(PFN = PFN_names, beta = no_euler_mod_results[,1], pvals_bonf = pvals_bonf)
+
+write_csv(no_euler_bonf,paste0(dout,"/22q_Group_TCA_no_euler_summary_results_bonf_REML_netnames_subclass.csv"))
+```
+
+
+### Bar plot of 22q effect, no euler:
+```{r}
+p_vec_adj<- no_euler_bonf[,3]
+print(p_vec_adj)
+keep_p <- ifelse(p_vec_adj<.05,1,0)
+print(keep_p)
+
+betas <- (exp(no_euler_bonf[,2]) - 1)*100 # EXP AND REL TO 1
+sorted_beta = rank(betas);
+pfn_inAscend_indx <- c()
+for (t in c(1:17)) { pfn_inAscend_indx <- append(pfn_inAscend_indx,which(sorted_beta == t))} #if using numbers, switch all pfn_inAscend to pfn_inAscend_indx and comment out next line
+pfn_inAscend <- PFN_names[pfn_inAscend_indx]
+
+# Using 7 colors scheme for bar plot
+data <- data.frame(EffectSizes = as.numeric(betas)) 
+data$EffectRank <- as.numeric(sorted_beta)
+# BorderColor1 is for colors of 1-17 network numbers(to lable the network numbers in a 1-17 order)
+BorderColor1 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E");
+				 
+# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN. ("black" is filled with black)
+BorderColor2 <- c("#E76178", "#FFFFFF", "#FFFFFF", "#7499C2", "#00A131",
+                 "#AF33AD", "#FFFFFF", "#E76178", "#E443FF", "#AF33AD",
+                 "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", 
+                 "#4E31A8", "#F5BA2E");
+
+# TextColor is for network label color
+TextColor <- c("black", "#767676", "#767676", "black", "black",
+                 "black", "#767676", "black", "black", "black",
+                 "#767676", "#767676", "#767676", "#767676", "#767676", 
+                 "black", "black");
+
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend_indx]
+BorderColor3 <- BorderColor2[pfn_inAscend_indx]
+TextColor_ordered <- TextColor[pfn_inAscend_indx]
+
+Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
+  geom_bar(stat = "identity", fill=BorderColor3[sorted_beta], 
+           colour = BorderColor[sorted_beta], linetype = "solid", width = 0.8) + 
+  labs(title = NULL, x = NULL, y = paste0("Group Atlas Areal Change (%)")) + theme_classic() +
+  theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
+  theme(axis.text.y = ggtext::element_markdown(size= 21, color = TextColor_ordered), 
+        axis.text.x = ggtext::element_markdown(size= 25, color = "black"), 
+        axis.title=ggtext::element_markdown(size = 25)) +
+  #theme(axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1)) +
+  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_beta)) +
+  scale_y_continuous(limits = c(-6, 5)) +
+  coord_flip()
+
+Fig
+ggsave(paste0("../../Results/22q_Group_Age/No_euler/subclass/22q_Group_TCA_no_euler_plot_REML_EXP_REL_100perc_subclass.png"), width = 19, height = 16, dpi = 600, units = "cm");
+ggsave(paste0("../../Results/22q_Group_Age/No_euler/subclass/22q_Group_TCA_no_euler_plot_REML_EXP_REL_100perc_subclass.pdf"), device = cairo_pdf, width = 19, height = 16, dpi = 600, units = "cm")
+```

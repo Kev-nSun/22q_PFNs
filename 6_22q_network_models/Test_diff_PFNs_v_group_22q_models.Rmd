@@ -1,0 +1,437 @@
+---
+title: "Test_diff_PFNs_v_group_22q_models"
+author: "Kevin Sun"
+date: "`1/21/2026`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(sjPlot)
+library(mgcv)
+library(boot)
+library(boot.pval)
+library(parallel)
+```
+
+#Import areas and demographics for PFNs
+```{r}
+#Read in area data
+areas_PNC <- read.csv("../../Inputs/PNC_summary_PFNs.csv") # n = 1482
+colnames(areas_PNC) <- gsub("_soft_parcel_normed", "", colnames(areas_PNC))
+areas_22q <- read.csv("../../Inputs/22q_summary_PFNs.csv") # n = 115
+areas_22q <- areas_22q[areas_22q$session != 8971,] #Remove ses-008971 of sub-016095, since this subject has 2 sessions -> n = 114
+
+#Pool 22q and PNC area data
+areas_22q <- areas_22q[, -2] #remove session column
+areas_all <- rbind(areas_PNC,areas_22q) # n = 1596
+
+#merge pooled areas with matched and pooled demographic dataset
+matched_demo <- read.csv("../../Results/Demographic_matching/matched_all_demo_QC_median_fd_r1x3.csv") # n = 215
+matched_all <- merge(matched_demo,areas_all,by="subject") # n = 215
+
+```
+
+#Factorize 22q status and sex
+```{r}
+matched_all$stat_22q <- factor(matched_all$stat_22q)
+matched_all$sex <- factor(matched_all$sex)
+```
+
+#Import areas and demographics for group atlas
+```{r}
+#Read in area data
+areas_PNC_group <- read.csv("../../Inputs/PNC_summary_group.csv") # n = 1598
+colnames(areas_PNC_group) <- gsub("_soft_parcel_normed", "", colnames(areas_PNC_group))
+areas_22q_group <- read.csv("../../Inputs/22q_summary_group.csv") # n = 131
+areas_22q_group <- areas_22q_group[areas_22q_group$session != 8971,] #Remove ses-008971 of sub-016095, since this subject has 2 sessions -> n = 130
+
+#Pool 22q and PNC area data
+areas_22q_group <- areas_22q_group[, -2] #remove session column
+areas_all_group <- rbind(areas_PNC_group,areas_22q_group) # n = 1728
+
+#merge pooled areas with matched and pooled demographic dataset
+matched_all_group <- merge(matched_demo,areas_all_group,by="subject") # n = 215
+```
+
+#Factorize 22q status
+```{r}
+matched_all_group$stat_22q <- factor(matched_all_group$stat_22q)
+matched_all_group$sex <- factor(matched_all_group$sex)
+```
+
+#Merge in PFN and Group Atlas areas
+```{r}
+# matched_all contains individualized PFN areas:
+# PFN01, PFN02, ..., PFN17
+#
+# matched_all_group contains Group Atlas areas:
+# PFN1, PFN2, ..., PFN17
+
+# Select Group Atlas network areas
+group_areas <- matched_all_group %>%
+  select(
+    subject,
+    all_of(paste0("PFN", 1:17))
+  )
+
+# Rename Group Atlas columns
+names(group_areas)[-1] <- paste0(
+  "group_PFN",
+  1:17
+)
+
+# Rename individualized PFN columns to match numbering convention
+matched_all_boot <- matched_all
+
+for (net in 1:17) {
+  old_name <- sprintf("PFN%02d", net)
+  new_name <- paste0("PFN", net)
+
+  names(matched_all_boot)[
+    names(matched_all_boot) == old_name
+  ] <- new_name
+}
+
+# Merge by subject so PFN and Group Atlas areas are explicitly aligned
+matched_22q_delta <- matched_all_boot %>%
+  left_join(
+    group_areas,
+    by = "subject"
+  )
+
+# Factorize variables used as factors
+matched_22q_delta$stat_22q <- factor(
+  matched_22q_delta$stat_22q
+)
+
+matched_22q_delta$sex <- factor(
+  matched_22q_delta$sex
+)
+
+matched_22q_delta$subclass <- factor(
+  matched_22q_delta$subclass
+)
+
+# Confirm required PFN and Group Atlas columns are present
+pfn_cols <- paste0("PFN", 1:17)
+group_cols <- paste0("group_PFN", 1:17)
+
+stopifnot(
+  all(pfn_cols %in% names(matched_22q_delta)),
+  all(group_cols %in% names(matched_22q_delta))
+)
+
+```
+
+#Bootstrap (difference in 22q effect magnitude, 2-tailed)
+```{r}
+# Randomly sample matched subclasses with replacement.
+# All participants within each sampled subclass are retained together.
+# Fit the PFN GAM on that resampled matched dataset.
+# Fit the corresponding Group Atlas GAM on the exact same resampled matched dataset.
+# Extract the two raw log-area 22q coefficients: PFN + Group.
+# Calculate the comparison statistic: |PFN beta| - |Group beta|.
+# x 5000
+#
+# Positive delta = larger absolute 22q effect for PFN.
+# Negative delta = larger absolute 22q effect for Group Atlas.
+
+set.seed(1)
+boot_n <- 5000
+nets <- 1:17
+
+make_boot_stat <- function(full_data, y_pfn, y_group) {
+
+  function(cluster_data, indices) {
+
+    # Resample matched subclasses rather than individual participants
+    sampled_subclasses <- cluster_data$subclass[indices]
+
+    # Reconstruct participant-level bootstrap sample
+    d_list <- lapply(
+      seq_along(sampled_subclasses),
+      function(i) {
+
+        original_subclass <- sampled_subclasses[i]
+
+        tmp <- full_data[
+          full_data$subclass == original_subclass,
+          ,
+          drop = FALSE
+        ]
+
+        # Give each resampled copy of a subclass a unique ID.
+        # This is necessary when the same original subclass is sampled
+        # more than once in a bootstrap replicate.
+        tmp$boot_subclass <- paste0("boot_", i)
+
+        tmp
+      }
+    )
+
+    d <- bind_rows(d_list)
+
+    d$boot_subclass <- factor(
+      d$boot_subclass
+    )
+
+    fit_pfn <- gam(
+      log(d[[y_pfn]]) ~
+        stat_22q +
+        log(TC_area) +
+        sex +
+        euler +
+        median_fd_combined +
+        s(age, k = 4) +
+        s(boot_subclass, bs = "re"),
+      data = d,
+      method = "REML"
+    )
+
+    fit_group <- gam(
+      log(d[[y_group]]) ~
+        stat_22q +
+        log(TC_area) +
+        sex +
+        euler +
+        median_fd_combined +
+        s(age, k = 4) +
+        s(boot_subclass, bs = "re"),
+      data = d,
+      method = "REML"
+    )
+
+    beta_pfn <- coef(fit_pfn)[["stat_22q1"]]
+    beta_group <- coef(fit_group)[["stat_22q1"]]
+
+    c(
+      beta_pfn = beta_pfn,
+      beta_group = beta_group,
+      delta_magnitude =
+        abs(beta_pfn) -
+        abs(beta_group)
+    )
+  }
+}
+
+# Number of workers
+# Leaving 1-2 logical cores free is usually sensible on a local machine
+n_cores <- max(1, detectCores() - 2)
+
+# Create Windows PSOCK cluster
+cl <- makeCluster(n_cores)
+
+# Load required packages on every worker
+clusterEvalQ(cl, {
+  library(mgcv)
+  library(boot)
+  library(dplyr)
+})
+
+# Reproducible independent RNG streams for workers
+clusterSetRNGStream(cl, iseed = 1)
+
+boot_results <- vector("list", length(nets))
+names(boot_results) <- paste0("PFN", nets)
+
+sample_sizes <- integer(length(nets))
+subclass_sizes <- integer(length(nets))
+
+for (net in nets) {
+
+  y_pfn <- paste0("PFN", net)
+  y_group <- paste0("group_PFN", net)
+
+  required_vars <- c(
+    y_pfn,
+    y_group,
+    "stat_22q",
+    "TC_area",
+    "sex",
+    "euler",
+    "median_fd_combined",
+    "age",
+    "subclass"
+  )
+
+  d_net <- matched_22q_delta[
+    ,
+    required_vars,
+    drop = FALSE
+  ]
+
+  # Identify participants with complete data for BOTH models
+  d_net$row_valid <-
+    complete.cases(d_net[, required_vars]) &
+    d_net[[y_pfn]] > 0 &
+    d_net[[y_group]] > 0 &
+    d_net$TC_area > 0
+
+  # Retain a matched subclass only if:
+  # 1. every participant in that subclass has valid data
+  # 2. both 22q-status groups are represented
+  valid_subclasses <- d_net %>%
+    group_by(subclass) %>%
+    summarise(
+      all_valid = all(row_valid),
+      n_status = n_distinct(stat_22q),
+      .groups = "drop"
+    ) %>%
+    filter(
+      all_valid,
+      n_status == 2
+    ) %>%
+    pull(subclass)
+
+  d_net <- d_net %>%
+    filter(
+      subclass %in% valid_subclasses
+    ) %>%
+    select(-row_valid) %>%
+    droplevels()
+
+  sample_sizes[net] <- nrow(d_net)
+  subclass_sizes[net] <- n_distinct(d_net$subclass)
+
+  # boot() receives one row per matched subclass,
+  # so resampling occurs at the matched-subclass level
+  cluster_index <- data.frame(
+    subclass = levels(d_net$subclass)
+  )
+
+  boot_results[[y_pfn]] <- boot(
+    data = cluster_index,
+    statistic = make_boot_stat(
+      full_data = d_net,
+      y_pfn = y_pfn,
+      y_group = y_group
+    ),
+    R = boot_n,
+
+    # Windows parallelization
+    parallel = "snow",
+    ncpus = n_cores,
+    cl = cl
+  )
+
+  message(
+    "Finished network ", net,
+    " of ", length(nets),
+    "; n = ", nrow(d_net),
+    "; subclasses = ", n_distinct(d_net$subclass)
+  )
+}
+
+# Shut down the workers when finished
+stopCluster(cl)
+
+```
+
+#Compare delta of boostrapped PFN and Group Atlas (difference in 22q effect magnitude, 2-tailed)
+```{r}
+dout <- "../../Results/22q_Group_v_PFN_Models"
+dir.create(dout)
+
+# Bias-corrected and accelerated (BCa) bootstrap confidence intervals:
+# - bias correction accounts for displacement of the bootstrap distribution relative to the observed estimate
+# - acceleration accounts for changes in the standard error with the underlying data, using empirical influence information
+
+# Bootstrap p-values are obtained by inversion of the corresponding BCa confidence-interval procedure.
+
+results <- vector("list", length(nets))
+
+for (net in nets) {
+
+  pfn_name <- paste0("PFN", net)
+  b <- boot_results[[pfn_name]]
+
+  # observed statistics
+  beta_pfn_obs   <- b$t0[1]
+  beta_group_obs <- b$t0[2]
+  delta_mag_obs  <- b$t0[3]
+
+  n_boot_valid <- sum(
+    apply(b$t, 1, function(x) all(is.finite(x)))
+  )
+
+  prop_boot_valid <- n_boot_valid / boot_n
+
+  # Bootstrap CI of difference in absolute 22q effect magnitude
+  ci_delta_mag <- boot.ci(
+    b,
+    type = "bca",
+    index = 3
+  )$bca[4:5]
+
+  # Bootstrap CIs of raw 22q betas
+  ci_beta_pfn <- boot.ci(
+    b,
+    type = "bca",
+    index = 1
+  )$bca[4:5]
+
+  ci_beta_group <- boot.ci(
+    b,
+    type = "bca",
+    index = 2
+  )$bca[4:5]
+
+  # Bootstrap p-value from CI inversion
+  #
+  # H0: |beta_PFN| - |beta_Group| = 0
+  # H1: |beta_PFN| - |beta_Group| != 0
+  p_delta_mag <- boot.pval(
+    b,
+    type = "bca",
+    theta_null = 0,
+    alternative = "two.sided",
+    index = 3
+  )
+
+  results[[net]] <- data.frame(
+    PFN = pfn_name,
+
+    n_participants = sample_sizes[net],
+    n_subclasses = subclass_sizes[net],
+
+    n_boot_valid = n_boot_valid,
+    prop_boot_valid = prop_boot_valid,
+
+    beta_pfn = beta_pfn_obs,
+    beta_pfn_CI_low = ci_beta_pfn[1],
+    beta_pfn_CI_high = ci_beta_pfn[2],
+
+    beta_group = beta_group_obs,
+    beta_group_CI_low = ci_beta_group[1],
+    beta_group_CI_high = ci_beta_group[2],
+
+    delta_magnitude = delta_mag_obs,
+    delta_magnitude_CI_low = ci_delta_mag[1],
+    delta_magnitude_CI_high = ci_delta_mag[2],
+    p_delta_magnitude = p_delta_mag
+  )
+}
+
+results <- bind_rows(results)
+
+results <- results %>%
+  mutate(
+    p_delta_magnitude_bonf =
+      p.adjust(
+        p_delta_magnitude,
+        method = "bonferroni"
+      )
+  )
+
+write_csv(
+  results,
+  paste0(
+    dout,
+    "/22q_Group_vs_PFN_raw_matched_boot_results_two_sided.csv"
+  )
+)
+```
