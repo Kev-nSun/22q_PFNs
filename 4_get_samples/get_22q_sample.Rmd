@@ -1,0 +1,52 @@
+---
+title: "get_22q_sample"
+author: "Kevin Sun"
+date: "`1/14/2026`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(readr)
+```
+
+#Import PNC demographics, func stats for idemo + rest, and T1 QC
+```{r}
+demo_func_22q <- read.csv("C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/22q_data/demo_22q.csv") # n = 114
+colnames(demo_func_22q)[1] <- "subject"
+colnames(demo_func_22q)[2] <- "session"
+T1_qc_22q <- read_csv("C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Initial_QC/T1_QC/T1_QC_22q_with_avg.csv") # n = 131
+colnames(T1_qc_22q)[1] <- "subject"
+colnames(T1_qc_22q)[2] <- "session"
+T1_euler_22q <- read_csv("C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Initial_QC/22q_freesurfer_qc_euler_summary.csv") # n = 130
+
+# Merge by subject and session- to take care of sub-016095, who has 2 separate sessions of which we are only keeping ses-004390
+all_22q <- merge(demo_func_22q,T1_qc_22q, by= c("subject","session")) # n = 114
+all_22q <- merge(all_22q,T1_euler_22q, by= c("subject","session")) # n = 114
+
+```
+
+#Exclude based on scans present (need both idemo and rest scans)
+```{r}
+#
+no_idemo_22q <- is.na(all_22q$n_vols_idemo) # 3 missing
+no_rest_22q <- is.na(all_22q$n_vols_rest) # 8 missing
+
+all_22q <- all_22q[!no_idemo_22q & !no_rest_22q,] # 103
+```
+
+# Exclude based on imaging quality criteria (T1 QC > 0 and median FD > 0.3)
+```{r}
+#Exclude QC avg_score = 0 
+all_22q <- all_22q[all_22q$avg_score > 0, ] # 102
+
+#Exclude median_fd_combined > 0.3
+clean_22q <- all_22q[all_22q$median_fd_combined <= 0.3, ] # 100
+```
+
+# Save out filtered demographics and QC for 22q
+```{r}
+write.csv(clean_22q,'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Inputs/filtered_demo_22q.csv', row.names = FALSE)
+```
+

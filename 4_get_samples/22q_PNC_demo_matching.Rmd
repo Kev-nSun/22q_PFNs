@@ -1,0 +1,726 @@
+---
+title: "Demographic Match PNC to 22q Sample"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+library(MatchIt)
+library(tidyr)
+library(dplyr)
+library(cobalt)
+library(ggplot2)
+library(finalfit)
+library(Hmisc)
+library(tidyverse)
+library(rstatix)
+library(ggpubr)
+```
+
+#Read in 22q and PNC demographics data
+```{r}
+demo_PNC <- read_csv('C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Inputs/filtered_demo_PNC.csv') # N = 1332
+demo_22q <- read_csv('C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Inputs/filtered_demo_22q.csv') # N = 100
+colnames(demo_PNC)[1] <- "subject"
+```
+
+# Initial demographic/QC comparison (median fd, Euler, age, sex, race)
+```{r}
+col_names <- c("PNC","SD_PNC","22q","SD_22q","p value")
+row_names <- c("Median_FD", "Euler", "Age", "Female_Prop", "White_Prop")
+QC_demo_stats <- matrix(
+  ncol = length(col_names),
+  nrow = length(row_names),
+  dimnames = list(row_names, col_names)
+)
+
+#median Fd
+avg_med_fd_PNC <- mean(demo_PNC$median_fd_combined)
+QC_demo_stats[1,1] <- avg_med_fd_PNC
+avg_med_fd_22q <- mean(demo_22q$median_fd_combined)
+QC_demo_stats[1,3] <- avg_med_fd_22q
+
+sd_med_fd_PNC <- sd(demo_PNC$median_fd_combined)
+QC_demo_stats[1,2] <- sd_med_fd_PNC
+sd_med_fd_22q <- sd(demo_22q$median_fd_combined)
+QC_demo_stats[1,4] <- sd_med_fd_22q
+
+med_fd_t_test <- t.test(demo_PNC$median_fd_combined, demo_22q$median_fd_combined, alternative = "two.sided", var.equal = FALSE)
+med_fd_t_val <- med_fd_t_test$statistic
+med_fd_p_val <- med_fd_t_test$p.value
+QC_demo_stats[1,5] <- med_fd_p_val
+
+
+#Euler
+avg_euler_PNC <- mean(demo_PNC$euler)
+QC_demo_stats[2,1] <- avg_euler_PNC
+avg_euler_22q <- mean(demo_22q$euler)
+QC_demo_stats[2,3] <- avg_euler_22q
+
+sd_euler_PNC <- sd(demo_PNC$euler)
+QC_demo_stats[2,2] <- sd_euler_PNC
+sd_euler_22q <- sd(demo_22q$euler)
+QC_demo_stats[2,4] <- sd_euler_22q
+
+euler_t_test <- t.test(demo_PNC$euler, demo_22q$euler, alternative = "two.sided", var.equal = FALSE)
+euler_t_val <- euler_t_test$statistic
+euler_p_val <- euler_t_test$p.value
+QC_demo_stats[2,5] <- euler_p_val
+
+#Age
+avg_age_PNC <- mean(demo_PNC$age)
+QC_demo_stats[3,1] <- avg_age_PNC
+avg_age_22q <- mean(demo_22q$age)
+QC_demo_stats[3,3] <- avg_age_22q
+
+sd_age_PNC <- sd(demo_PNC$age)
+QC_demo_stats[3,2] <- sd_age_PNC
+sd_age_22q <- sd(demo_22q$age)
+QC_demo_stats[3,4] <- sd_age_22q
+
+age_t_test <- t.test(demo_PNC$age, demo_22q$age, alternative = "two.sided", var.equal = FALSE)
+age_t_val <- age_t_test$statistic
+age_p_val <- age_t_test$p.value
+QC_demo_stats[3,5] <- age_p_val
+
+#Visualize age distribution
+Fig <- ggplot(demo_PNC, aes(x = age)) +
+  geom_histogram(binwidth = 2,    # Width of the bins
+                 fill = "black", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  geom_histogram(data = demo_22q, aes(x = age), 
+                 binwidth = 2,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "gray", # Border color of the bars
+                 alpha = 0.7) + 
+  labs(title = paste0("PNC vs 22q11.2DS Age Distribution"),
+       x = "Age)",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5))
+print(Fig)
+
+#Sex
+N_female_PNC <- sum(demo_PNC$sex == "Female")
+N_PNC <- nrow(demo_PNC)
+female_prop_PNC <- N_female_PNC/N_PNC
+QC_demo_stats[4,1] <- female_prop_PNC
+
+N_female_22q <- sum(demo_22q$sex == "Female")
+N_22q <- nrow(demo_22q)
+female_prop_22q <- N_female_22q/N_22q
+QC_demo_stats[4,3] <- female_prop_22q
+
+N_females <- c(N_female_PNC, N_female_22q)
+N_samples <- c(N_PNC, N_22q)
+
+female_prop_test <- prop.test(N_females, N_samples, correct = FALSE)
+female_prop_X <- female_prop_test$statistic
+female_prop_p_val <- female_prop_test$p.value
+QC_demo_stats[4,5] <- female_prop_p_val
+
+
+#Race
+N_White_PNC <- sum(demo_PNC$race == "White")
+N_PNC <- nrow(demo_PNC)
+White_prop_PNC <- N_White_PNC/N_PNC
+QC_demo_stats[5,1] <- White_prop_PNC
+
+N_White_22q <- sum(demo_22q$race == "White")
+N_22q <- nrow(demo_22q)
+White_prop_22q <- N_White_22q/N_22q
+QC_demo_stats[5,3] <- White_prop_22q
+
+N_Whites <- c(N_White_PNC, N_White_22q)
+N_samples <- c(N_PNC, N_22q)
+
+White_prop_test <- prop.test(N_Whites, N_samples, correct = FALSE)
+White_prop_X <- White_prop_test$statistic
+White_prop_p_val <- White_prop_test$p.value
+QC_demo_stats[5,5] <- White_prop_p_val
+
+write.csv(QC_demo_stats,'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/Demographic_matching/PNC_22q_demo_QC_stats.csv', row.names = TRUE)
+
+```
+
+#Try to understand euler better
+```{r}
+#Get median
+med_euler_PNC <- median(demo_PNC$euler)
+med_euler_22q <- median(demo_22q$euler)
+
+#Wilcoxon rank-sum test
+wilcox.test(demo_PNC$euler, demo_22q$euler)
+
+#Correlation with QC rating
+cor.test(demo_PNC$across_rater_average, demo_PNC$euler, method = "pearson")
+cor.test(demo_22q$avg_score, demo_22q$euler, method = "pearson")
+
+Fig <- ggplot(demo_PNC, aes(x = across_rater_average, y = euler)) +
+  geom_point(size = 2)
+print(Fig)
+
+Fig <- ggplot(demo_22q, aes(x = avg_score, y = euler)) +
+  geom_point(size = 2)
+print(Fig)
+
+#Correlation with median fd
+cor.test(demo_PNC$median_fd_combined, demo_PNC$euler, method = "pearson")
+cor.test(demo_22q$median_fd_combined, demo_22q$euler, method = "pearson")
+
+Fig <- ggplot(demo_PNC, aes(x = median_fd_combined, y = euler)) +
+  geom_point(size = 2)
+print(Fig)
+
+Fig <- ggplot(demo_22q, aes(x = median_fd_combined, y = euler)) +
+  geom_point(size = 2)
+print(Fig)
+
+#Correlation with age
+cor.test(demo_PNC$age, demo_PNC$euler, method = "pearson")
+cor.test(demo_22q$age, demo_22q$euler, method = "pearson")
+
+Fig <- ggplot(demo_PNC, aes(x = age, y = euler)) +
+  geom_point(size = 2)
+print(Fig)
+
+Fig <- ggplot(demo_22q, aes(x = age, y = euler)) +
+  geom_point(size = 2)
+print(Fig)
+
+#Assocation with TCA in PNC controlling for age
+PNC_areas <- read.csv("../../../Inputs/summary.csv") # n = 1598
+PNC_TCA <- PNC_areas[,c(1,2)]
+PNC_demo_area <- merge(demo_PNC,PNC_TCA,by="subject") # n = 1332
+
+summary(lm(scale(euler) ~ scale(TC_area) + scale(age), data=PNC_demo_area))
+
+Fig <- ggplot(PNC_demo_area, aes(x = TC_area, y = euler)) +
+  geom_point(size = 2)
+print(Fig)
+
+#Association of median FD with TCA in PNC controlling for age
+summary(lm(scale(median_fd_combined) ~ scale(TC_area) + scale(age), data=PNC_demo_area))
+
+Fig <- ggplot(PNC_demo_area, aes(x = TC_area, y = median_fd_combined)) +
+  geom_point(size = 2)
+print(Fig)
+
+Fig <- ggplot(demo_PNC, aes(x = euler)) +
+  geom_histogram(binwidth = 15,    # Width of the bins
+                 fill = "#474747", # Fill color of the bars
+                 color = "#474747") + # Border color of the bars 
+  labs(title = paste0("Euler Number Distribution in PNC"),
+       x = "Euler Number",
+       y = "Number of Subjects") +
+  coord_cartesian(xlim = c(-325, 0)) +
+  theme(plot.title = element_text(hjust = 0.5))
+print(Fig)
+
+Fig <- ggplot(demo_22q, aes(x = euler)) +
+  geom_histogram(binwidth = 15,    # Width of the bins
+                 fill = "#474747", # Fill color of the bars
+                 color = "#474747") + # Border color of the bars
+  labs(title = paste0("Euler Number Distribution in 22q"),
+       x = "Euler Number",
+       y = "Number of Subjects") +
+  coord_cartesian(xlim = c(-325, 0)) +
+  theme(plot.title = element_text(hjust = 0.5))
+print(Fig)
+```
+
+------------------------------
+Create Matched Data
+------------------------------
+
+#Merge 22q and PNC for matching purposes
+```{r}
+demo_22q$stat_22q <- 1
+demo_PNC$stat_22q <- 0
+colnames(demo_PNC)[1] <- "subject"
+
+demo_22q$subject <- gsub("sub-0", "", demo_22q$subject)
+demo_22q$subject <- gsub("sub-", "", demo_22q$subject)
+
+demo_22q_keep <- demo_22q[,c("subject","stat_22q","age","sex","race","median_fd_combined","euler")]
+demo_PNC_keep <- demo_PNC[,c("subject","stat_22q","age","sex","race","median_fd_combined","euler")]
+
+#Pool 2 datasets
+PNC_22q_pooled <- rbind(demo_22q_keep,demo_PNC_keep) #N = 1432
+
+# Pool "Asian" and "Mixed" into "Other" for race
+PNC_22q_pooled$race <- gsub("Asian", "Other", PNC_22q_pooled$race)
+PNC_22q_pooled$race <- gsub("Mixed", "Other", PNC_22q_pooled$race)
+```
+
+
+# 1. Match 1 to 1 with median fd
+```{r}
+m_r1_fd <- matchit(stat_22q ~ age + sex + race + median_fd_combined,
+                  data = PNC_22q_pooled,
+                  method = "nearest",
+                  ratio = 1,
+                  caliper = 0.1,
+                  distance = "glm")
+
+summary(m_r1_fd)
+plot(summary(m_r1_fd))
+matched_r1 <- match.data(m_r1_fd)
+```
+
+# 2. Match 1 to 1 with median fd again after removing round 1 matched controls
+```{r}
+drop_subj <- matched_r1$subject[matched_r1$stat_22q == 0]
+
+PNC_22q_pooled_post_r1 <- PNC_22q_pooled[!(PNC_22q_pooled$subject %in% drop_subj),]
+
+m_r1.2_fd <- matchit(stat_22q ~ age + sex + race + median_fd_combined,
+                  data = PNC_22q_pooled_post_r1,
+                  method = "nearest",
+                  ratio = 1,
+                  caliper = 0.1,
+                  distance = "glm")
+
+summary(m_r1.2_fd)
+plot(summary(m_r1.2_fd))
+matched_r1.2 <- match.data(m_r1.2_fd)
+```
+
+
+# 3. Match 1 to 1 with median fd again after removing round 2 matched controls
+```{r}
+drop_subj <- matched_r1.2$subject[matched_r1.2$stat_22q == 0]
+
+PNC_22q_pooled_post_r1.2 <- PNC_22q_pooled_post_r1[!(PNC_22q_pooled_post_r1$subject %in% drop_subj),]
+
+m_r1.3_fd <- matchit(stat_22q ~ age + sex + race + median_fd_combined,
+                  data = PNC_22q_pooled_post_r1.2,
+                  method = "nearest",
+                  ratio = 1,
+                  caliper = 0.1,
+                  distance = "glm")
+
+summary(m_r1.3_fd)
+plot(summary(m_r1.3_fd))
+matched_r1.3 <- match.data(m_r1.3_fd)
+```
+
+#Pool after 3 rounds of matching, calculate stats after matching, and save out matched sample and stats (ratio 1 x3, with median FD)
+```{r}
+matched_r1$match_round <- 1
+matched_r1.2$match_round <- 2
+matched_r1.3$match_round <- 3
+
+matched_all <- bind_rows(matched_r1, matched_r1.2, matched_r1.3) %>%
+  arrange(subject, match_round) %>%          # priority: round 1 then 2 then 3
+  group_by(subject) %>%
+  slice(1) %>%                               # keep the highest-priority row
+  ungroup()
+
+col_names <- c("PNC","SD_PNC","22q","SD_22q","p value")
+row_names <- c("Median_FD", "Euler", "Age", "Female_Prop", "Male_Prop", "White_Prop", "Black_Prop", "Other_Prop")
+QC_demo_stats_matched_all <- matrix(
+  ncol = length(col_names),
+  nrow = length(row_names),
+  dimnames = list(row_names, col_names)
+)
+
+#median Fd
+avg_med_fd_control <- mean(matched_all$median_fd_combined[matched_all$stat_22q == 0])
+QC_demo_stats_matched_all[1,1] <- avg_med_fd_control
+avg_med_fd_22q <- mean(matched_all$median_fd_combined[matched_all$stat_22q == 1])
+QC_demo_stats_matched_all[1,3] <- avg_med_fd_22q
+
+sd_med_fd_control <- sd(matched_all$median_fd_combined[matched_all$stat_22q == 0])
+QC_demo_stats_matched_all[1,2] <- sd_med_fd_control
+sd_med_fd_22q <- sd(matched_all$median_fd_combined[matched_all$stat_22q == 1])
+QC_demo_stats_matched_all[1,4] <- sd_med_fd_22q
+
+med_fd_t_test <- t.test(matched_all$median_fd_combined[matched_all$stat_22q == 0], matched_all$median_fd_combined[matched_all$stat_22q == 1], alternative = "two.sided", var.equal = FALSE)
+med_fd_t_val <- med_fd_t_test$statistic
+med_fd_p_val <- med_fd_t_test$p.value
+QC_demo_stats_matched_all[1,5] <- med_fd_p_val
+
+
+#Euler
+avg_euler_control <- mean(matched_all$euler[matched_all$stat_22q == 0])
+QC_demo_stats_matched_all[2,1] <- avg_euler_control
+avg_euler_22q <- mean(matched_all$euler[matched_all$stat_22q == 1])
+QC_demo_stats_matched_all[2,3] <- avg_euler_22q
+
+sd_euler_control <- sd(matched_all$euler[matched_all$stat_22q == 0])
+QC_demo_stats_matched_all[2,2] <- sd_euler_control
+sd_euler_22q <- sd(matched_all$euler[matched_all$stat_22q == 1])
+QC_demo_stats_matched_all[2,4] <- sd_euler_22q
+
+euler_t_test <- t.test(matched_all$euler[matched_all$stat_22q == 0], matched_all$euler[matched_all$stat_22q == 1], alternative = "two.sided", var.equal = FALSE)
+euler_t_val <- euler_t_test$statistic
+euler_p_val <- euler_t_test$p.value
+QC_demo_stats_matched_all[2,5] <- euler_p_val
+
+
+#Age
+avg_age_control <- mean(matched_all$age[matched_all$stat_22q == 0])
+QC_demo_stats_matched_all[3,1] <- avg_age_control
+avg_age_22q <- mean(matched_all$age[matched_all$stat_22q == 1])
+QC_demo_stats_matched_all[3,3] <- avg_age_22q
+
+sd_age_control <- sd(matched_all$age[matched_all$stat_22q == 0])
+QC_demo_stats_matched_all[3,2] <- sd_age_control
+sd_age_22q <- sd(matched_all$age[matched_all$stat_22q == 1])
+QC_demo_stats_matched_all[3,4] <- sd_age_22q
+
+age_t_test <- t.test(matched_all$age[matched_all$stat_22q == 0], matched_all$age[matched_all$stat_22q == 1], alternative = "two.sided", var.equal = FALSE)
+age_t_val <- age_t_test$statistic
+age_p_val <- age_t_test$p.value
+QC_demo_stats_matched_all[3,5] <- age_p_val
+
+
+#Female
+N_female_control <- matched_all %>%
+  filter(stat_22q == 0 & sex == "Female") %>%
+  nrow()
+N_controls <- sum(matched_all$stat_22q == 0)
+female_prop_control <- N_female_control/N_controls
+QC_demo_stats_matched_all[4,1] <- female_prop_control
+
+N_female_22q <- matched_all %>%
+  filter(stat_22q == 1 & sex == "Female") %>%
+  nrow()
+N_22q <- sum(matched_all$stat_22q == 1)
+female_prop_22q <- N_female_22q/N_22q
+QC_demo_stats_matched_all[4,3] <- female_prop_22q
+
+N_females <- c(N_female_control, N_female_22q)
+N_samples <- c(N_controls, N_22q)
+
+female_prop_22q <- prop.test(N_females, N_samples, correct = FALSE)
+female_prop_X <- female_prop_22q$statistic
+female_prop_p_val <- female_prop_22q$p.value
+QC_demo_stats_matched_all[4,5] <- female_prop_p_val
+
+#Male
+N_male_control <- matched_all %>%
+  filter(stat_22q == 0 & sex == "Male") %>%
+  nrow()
+N_controls <- sum(matched_all$stat_22q == 0)
+male_prop_control <- N_male_control/N_controls
+QC_demo_stats_matched_all[5,1] <- male_prop_control
+
+N_male_22q <- matched_all %>%
+  filter(stat_22q == 1 & sex == "Male") %>%
+  nrow()
+N_22q <- sum(matched_all$stat_22q == 1)
+male_prop_22q <- N_male_22q/N_22q
+QC_demo_stats_matched_all[5,3] <- male_prop_22q
+
+N_males <- c(N_male_control, N_male_22q)
+N_samples <- c(N_controls, N_22q)
+
+male_prop_22q <- prop.test(N_males, N_samples, correct = FALSE)
+male_prop_X <- male_prop_22q$statistic
+male_prop_p_val <- male_prop_22q$p.value
+QC_demo_stats_matched_all[5,5] <- male_prop_p_val
+
+
+#White
+N_White_control <- matched_all %>%
+  filter(stat_22q == 0 & race == "White") %>%
+  nrow()
+N_controls <- sum(matched_all$stat_22q == 0)
+White_prop_control <- N_White_control/N_controls
+QC_demo_stats_matched_all[6,1] <- White_prop_control
+
+N_White_22q <- matched_all %>%
+  filter(stat_22q == 1 & race == "White") %>%
+  nrow()
+N_22q <- sum(matched_all$stat_22q == 1)
+White_prop_22q <- N_White_22q/N_22q
+QC_demo_stats_matched_all[6,3] <- White_prop_22q
+
+N_White <- c(N_White_control, N_White_22q)
+N_samples <- c(N_controls, N_22q)
+
+White_prop_22q <- prop.test(N_White, N_samples, correct = FALSE)
+White_prop_X <- White_prop_22q$statistic
+White_prop_p_val <- White_prop_22q$p.value
+QC_demo_stats_matched_all[6,5] <- White_prop_p_val
+
+#Black
+N_Black_control <- matched_all %>%
+  filter(stat_22q == 0 & race == "Black") %>%
+  nrow()
+N_controls <- sum(matched_all$stat_22q == 0)
+Black_prop_control <- N_Black_control/N_controls
+QC_demo_stats_matched_all[7,1] <- Black_prop_control
+
+N_Black_22q <- matched_all %>%
+  filter(stat_22q == 1 & race == "Black") %>%
+  nrow()
+N_22q <- sum(matched_all$stat_22q == 1)
+Black_prop_22q <- N_Black_22q/N_22q
+QC_demo_stats_matched_all[7,3] <- Black_prop_22q
+
+N_Black <- c(N_Black_control, N_Black_22q)
+N_samples <- c(N_controls, N_22q)
+
+Black_prop_22q <- prop.test(N_Black, N_samples, correct = FALSE)
+Black_prop_X <- Black_prop_22q$statistic
+Black_prop_p_val <- Black_prop_22q$p.value
+QC_demo_stats_matched_all[7,5] <- Black_prop_p_val
+
+#Other
+N_Other_control <- matched_all %>%
+  filter(stat_22q == 0 & race == "Other") %>%
+  nrow()
+N_controls <- sum(matched_all$stat_22q == 0)
+Other_prop_control <- N_Other_control/N_controls
+QC_demo_stats_matched_all[8,1] <- Other_prop_control
+
+N_Other_22q <- matched_all %>%
+  filter(stat_22q == 1 & race == "Other") %>%
+  nrow()
+N_22q <- sum(matched_all$stat_22q == 1)
+Other_prop_22q <- N_Other_22q/N_22q
+QC_demo_stats_matched_all[8,3] <- Other_prop_22q
+
+N_Other <- c(N_Other_control, N_Other_22q)
+N_samples <- c(N_controls, N_22q)
+
+Other_prop_22q <- prop.test(N_Other, N_samples, correct = FALSE)
+Other_prop_X <- Other_prop_22q$statistic
+Other_prop_p_val <- Other_prop_22q$p.value
+QC_demo_stats_matched_all[8,5] <- Other_prop_p_val
+
+write.csv(QC_demo_stats_matched_all,'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/Demographic_matching/matched_demo_QC_stats_median_fd_r1x3.csv', row.names = TRUE)
+
+write.csv(matched_all,'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/Demographic_matching/matched_all_demo_QC_median_fd_r1x3.csv', row.names = FALSE)
+```
+
+#Look at Euler distribution after matching
+```{r}
+#Wilcoxon rank-sum test for euler
+wilcox.test(matched_all$euler[matched_all$stat_22q == 0], matched_all$euler[matched_all$stat_22q == 1])
+
+#Get median
+med_euler_PNC_matched <- median(matched_all$euler[matched_all$stat_22q == 0])
+med_euler_22q_matched <- median(matched_all$euler[matched_all$stat_22q == 1])
+
+matched_control <- matched_all[matched_all$stat_22q == 0,]
+matched_22q <- matched_all[matched_all$stat_22q == 1,]
+
+Fig <- ggplot(matched_control, aes(x = euler)) +
+  geom_histogram(binwidth = 15,    # Width of the bins
+                 fill = "#474747", # Fill color of the bars
+                 color = "#474747") + # Border color of the bars
+  labs(title = paste0("Euler Number Distribution in PNC"),
+       x = "Euler Number",
+       y = "Number of Subjects") +
+  coord_cartesian(xlim = c(-200, 0)) +
+  theme(plot.title = element_text(hjust = 0.5))
+print(Fig)
+
+Fig <- ggplot(matched_22q, aes(x = euler)) +
+  geom_histogram(binwidth = 15,    # Width of the bins
+                 fill = "#474747", # Fill color of the bars
+                 color = "#474747") + # Border color of the bars
+  labs(title = paste0("Euler Number Distribution in 22q"),
+       x = "Euler Number",
+       y = "Number of Subjects") +
+  coord_cartesian(xlim = c(-200, 0)) +
+  theme(plot.title = element_text(hjust = 0.5))
+print(Fig)
+
+```
+
+
+#Merge 22q and PNC for matching purposes, but also restrict to overlapping age
+```{r}
+demo_22q$stat_22q <- 1
+demo_PNC$stat_22q <- 0
+colnames(demo_PNC)[1] <- "subject"
+
+demo_22q$subject <- gsub("sub-0", "", demo_22q$subject)
+demo_22q$subject <- gsub("sub-", "", demo_22q$subject)
+
+demo_22q_keep <- demo_22q[,c("subject","stat_22q","age","sex","race","median_fd_combined","euler")]
+demo_PNC_keep <- demo_PNC[,c("subject","stat_22q","age","sex","race","median_fd_combined","euler")]
+
+age_min_22q <- min(demo_22q_keep$age) #10.23
+age_max_PNC <- max(demo_PNC_keep$age) #23.08
+
+demo_22q_age_overlap <- demo_22q_keep[demo_22q_keep$age<=age_max_PNC,] # n = 56
+demo_PNC_age_overlap <- demo_PNC_keep[demo_PNC_keep$age>=age_min_22q,] # n = 1207
+
+#Pool 2 datasets
+PNC_22q_pooled_age_overlap <- rbind(demo_22q_age_overlap,demo_PNC_age_overlap) #N = 1263
+
+# Pool "Asian" and "Mixed" into "Other" for race
+PNC_22q_pooled_age_overlap$race <- gsub("Asian", "Other", PNC_22q_pooled_age_overlap$race)
+PNC_22q_pooled_age_overlap$race <- gsub("Mixed", "Other", PNC_22q_pooled_age_overlap$race)
+```
+
+
+# Match 3 to 1 with median fd after restricting to age overlap
+```{r}
+m_r3_fd_overlap <- matchit(stat_22q ~ age + sex + race + median_fd_combined,
+                  data = PNC_22q_pooled_age_overlap,
+                  method = "nearest",
+                  ratio = 3,
+                  distance = "glm")
+
+summary(m_r3_fd_overlap)
+plot(summary(m_r3_fd_overlap))
+matched_r3_overlap <- match.data(m_r3_fd_overlap)
+```
+
+
+#Calculate stats after matching ratio 3:1 with age overlap
+```{r}
+
+col_names <- c("PNC","SD_PNC","22q","SD_22q","p value")
+row_names <- c("Median_FD", "Euler", "Age", "Female_Prop", "White_Prop")
+QC_demo_stats_matched_r3_overlap <- matrix(
+  ncol = length(col_names),
+  nrow = length(row_names),
+  dimnames = list(row_names, col_names)
+)
+
+#median Fd
+avg_med_fd_control <- mean(matched_r3_overlap$median_fd_combined[matched_r3_overlap$stat_22q == 0])
+QC_demo_stats_matched_r3_overlap[1,1] <- avg_med_fd_control
+avg_med_fd_22q <- mean(matched_r3_overlap$median_fd_combined[matched_r3_overlap$stat_22q == 1])
+QC_demo_stats_matched_r3_overlap[1,3] <- avg_med_fd_22q
+
+sd_med_fd_control <- sd(matched_r3_overlap$median_fd_combined[matched_r3_overlap$stat_22q == 0])
+QC_demo_stats_matched_r3_overlap[1,2] <- sd_med_fd_control
+sd_med_fd_22q <- sd(matched_r3_overlap$median_fd_combined[matched_r3_overlap$stat_22q == 1])
+QC_demo_stats_matched_r3_overlap[1,4] <- sd_med_fd_22q
+
+med_fd_t_test <- t.test(matched_r3_overlap$median_fd_combined[matched_r3_overlap$stat_22q == 0], matched_r3_overlap$median_fd_combined[matched_r3_overlap$stat_22q == 1], alternative = "two.sided", var.equal = FALSE)
+med_fd_t_val <- med_fd_t_test$statistic
+med_fd_p_val <- med_fd_t_test$p.value
+QC_demo_stats_matched_r3_overlap[1,5] <- med_fd_p_val
+
+
+#Euler
+avg_euler_control <- mean(matched_r3_overlap$euler[matched_r3_overlap$stat_22q == 0])
+QC_demo_stats_matched_r3_overlap[2,1] <- avg_euler_control
+avg_euler_22q <- mean(matched_r3_overlap$euler[matched_r3_overlap$stat_22q == 1])
+QC_demo_stats_matched_r3_overlap[2,3] <- avg_euler_22q
+
+sd_euler_control <- sd(matched_r3_overlap$euler[matched_r3_overlap$stat_22q == 0])
+QC_demo_stats_matched_r3_overlap[2,2] <- sd_euler_control
+sd_euler_22q <- sd(matched_r3_overlap$euler[matched_r3_overlap$stat_22q == 1])
+QC_demo_stats_matched_r3_overlap[2,4] <- sd_euler_22q
+
+euler_t_test <- t.test(matched_r3_overlap$euler[matched_r3_overlap$stat_22q == 0], matched_r3_overlap$euler[matched_r3_overlap$stat_22q == 1], alternative = "two.sided", var.equal = FALSE)
+euler_t_val <- euler_t_test$statistic
+euler_p_val <- euler_t_test$p.value
+QC_demo_stats_matched_r3_overlap[2,5] <- euler_p_val
+
+
+#Age
+avg_age_control <- mean(matched_r3_overlap$age[matched_r3_overlap$stat_22q == 0])
+QC_demo_stats_matched_r3_overlap[3,1] <- avg_age_control
+avg_age_22q <- mean(matched_r3_overlap$age[matched_r3_overlap$stat_22q == 1])
+QC_demo_stats_matched_r3_overlap[3,3] <- avg_age_22q
+
+sd_age_control <- sd(matched_r3_overlap$age[matched_r3_overlap$stat_22q == 0])
+QC_demo_stats_matched_r3_overlap[3,2] <- sd_age_control
+sd_age_22q <- sd(matched_r3_overlap$age[matched_r3_overlap$stat_22q == 1])
+QC_demo_stats_matched_r3_overlap[3,4] <- sd_age_22q
+
+age_t_test <- t.test(matched_r3_overlap$age[matched_r3_overlap$stat_22q == 0], matched_r3_overlap$age[matched_r3_overlap$stat_22q == 1], alternative = "two.sided", var.equal = FALSE)
+age_t_val <- age_t_test$statistic
+age_p_val <- age_t_test$p.value
+QC_demo_stats_matched_r3_overlap[3,5] <- age_p_val
+
+
+#Sex
+N_female_control <- matched_r3_overlap %>%
+  filter(stat_22q == 0 & sex == "Female") %>%
+  nrow()
+N_controls <- sum(matched_r3_overlap$stat_22q == 0)
+female_prop_control <- N_female_control/N_controls
+QC_demo_stats_matched_r3_overlap[4,1] <- female_prop_control
+
+N_female_22q <- matched_r3_overlap %>%
+  filter(stat_22q == 1 & sex == "Female") %>%
+  nrow()
+N_22q <- sum(matched_r3_overlap$stat_22q == 1)
+female_prop_22q <- N_female_22q/N_22q
+QC_demo_stats_matched_r3_overlap[4,3] <- female_prop_22q
+
+N_females <- c(N_female_control, N_female_22q)
+N_samples <- c(N_controls, N_22q)
+
+female_prop_22q <- prop.test(N_females, N_samples, correct = FALSE)
+female_prop_X <- female_prop_22q$statistic
+female_prop_p_val <- female_prop_22q$p.value
+QC_demo_stats_matched_r3_overlap[4,5] <- female_prop_p_val
+
+
+#Race
+N_White_control <- matched_r3_overlap %>%
+  filter(stat_22q == 0 & race == "White") %>%
+  nrow()
+N_controls <- sum(matched_r3_overlap$stat_22q == 0)
+White_prop_control <- N_White_control/N_controls
+QC_demo_stats_matched_r3_overlap[5,1] <- White_prop_control
+
+N_White_22q <- matched_r3_overlap %>%
+  filter(stat_22q == 1 & race == "White") %>%
+  nrow()
+N_22q <- sum(matched_r3_overlap$stat_22q == 1)
+White_prop_22q <- N_White_22q/N_22q
+QC_demo_stats_matched_r3_overlap[5,3] <- White_prop_22q
+
+N_White <- c(N_White_control, N_White_22q)
+N_samples <- c(N_controls, N_22q)
+
+White_prop_22q <- prop.test(N_White, N_samples, correct = FALSE)
+White_prop_X <- White_prop_22q$statistic
+White_prop_p_val <- White_prop_22q$p.value
+QC_demo_stats_matched_r3_overlap[5,5] <- White_prop_p_val
+
+write.csv(QC_demo_stats_matched_r3_overlap,'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/Demographic_matching/matched_demo_QC_stats_median_fd_r3_overlap.csv', row.names = TRUE)
+
+write.csv(matched_r3_overlap,'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/Demographic_matching/matched_r3_overlap_demo_QC_median_fd.csv', row.names = FALSE)
+```
+
+#Look at Euler distribution after matching
+```{r}
+#Wilcoxon rank-sum test for euler
+wilcox.test(matched_r3_overlap$euler[matched_r3_overlap$stat_22q == 0], matched_r3_overlap$euler[matched_r3_overlap$stat_22q == 1])
+
+#Get median
+med_euler_PNC_matched <- median(matched_r3_overlap$euler[matched_r3_overlap$stat_22q == 0])
+med_euler_22q_matched <- median(matched_r3_overlap$euler[matched_r3_overlap$stat_22q == 1])
+
+matched_control_overlap <- matched_r3_overlap[matched_r3_overlap$stat_22q == 0,]
+matched_22q_overlap <- matched_r3_overlap[matched_r3_overlap$stat_22q == 1,]
+
+Fig <- ggplot(matched_control_overlap, aes(x = euler)) +
+  geom_histogram(binwidth = 15,    # Width of the bins
+                 fill = "#474747", # Fill color of the bars
+                 color = "#474747") + # Border color of the bars
+  labs(title = paste0("Euler Number Distribution in PNC"),
+       x = "Euler Number",
+       y = "Number of Subjects") +
+  coord_cartesian(xlim = c(-200, 0)) +
+  theme(plot.title = element_text(hjust = 0.5))
+print(Fig)
+
+Fig <- ggplot(matched_22q_overlap, aes(x = euler)) +
+  geom_histogram(binwidth = 15,    # Width of the bins
+                 fill = "#474747", # Fill color of the bars
+                 color = "#474747") + # Border color of the bars
+  labs(title = paste0("Euler Number Distribution in 22q"),
+       x = "Euler Number",
+       y = "Number of Subjects") +
+  coord_cartesian(xlim = c(-200, 0)) +
+  theme(plot.title = element_text(hjust = 0.5))
+print(Fig)
+
+```
