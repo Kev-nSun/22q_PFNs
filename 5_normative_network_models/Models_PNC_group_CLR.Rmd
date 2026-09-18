@@ -18,6 +18,7 @@ colnames(PNC_TC_and_group_network_areas)[1] <- "participant_id"
 PNC_demos <- read.csv("../../Inputs/filtered_demo_PNC.csv") #n = 1332
 PNC_all <- merge(PNC_TC_and_group_network_areas,PNC_demos,by="participant_id") # n = 1332
 
+PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-lh", "DM-A", "SM-rh", "DA-ant", "ParMem", "Auditory", "FP-B")
 ```
 
 #Factorize sex
@@ -60,8 +61,7 @@ CLR_models <- list()
 
 for (net in c(1:17)) {
   CLR_net <-  paste0("CLR_PFN",net)
-  CLR_model <- gam(get(CLR_net) ~ log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all)
-  print(summary(CLR_model))
+  CLR_model <- gam(get(CLR_net) ~ log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all,method="REML")
   print(tab_model(CLR_model,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c(paste0("Net ",net, "- CLR")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/PNC_Group_PFN",net,"_CLR.doc")))
   CLR_models[[net]] <- CLR_model #store all models in list
 }
@@ -80,7 +80,6 @@ for (net in c(1:17)) {
 }
 
 pvals_bonf <- p.adjust(CLR_results[,2], method = "bonf")
-PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
 CLR_bonf <-  data.frame(PFN = PFN_names, beta = CLR_results[,1], pvals_bonf = pvals_bonf)
 
 write_csv(CLR_bonf,paste0(dout,"/PNC_Group_CLR_summary_results_bonf.csv"))
@@ -95,8 +94,9 @@ print(keep_p)
 
 betas <- CLR_bonf[,2]
 sorted_beta = rank(betas);
-pfn_inAscend <- c()
-for (t in c(1:17)) { pfn_inAscend <- append(pfn_inAscend,which(sorted_beta == t))}
+pfn_inAscend_indx <- c()
+for (t in c(1:17)) { pfn_inAscend_indx <- append(pfn_inAscend_indx,which(sorted_beta == t))} #if using numbers, switch all pfn_inAscend to pfn_inAscend_indx and comment out next line
+pfn_inAscend <- PFN_names[pfn_inAscend_indx]
 
 # Using 7 colors scheme for bar plot
 data <- data.frame(EffectSizes = as.numeric(betas)) 
@@ -112,29 +112,33 @@ BorderColor2 <- c("#FFFFFF", "#7499C2", "#F5BA2E", "#FFFFFF", "#00A131",
                  "#FFFFFF", "#E443FF", "#FFFFFF", "#E443FF", "#FFFFFF",
                  "#FFFFFF", "#E76178", "#FFFFFF", "#00A131", "#FFFFFF", 
                  "#4E31A8", "#F5BA2E");
-# Change the color order
-BorderColor <- BorderColor1[pfn_inAscend]
-BorderColor3 <- BorderColor2[pfn_inAscend]
 
-# the line type for the 1-17 network bars (in a 1-17 order).  If a dashed line is needed for a bar, please change the value to "dashed".
-LineType <- c("dashed", "solid", "solid", "dashed", "solid",
-              "dashed", "solid", "dashed", "solid", "dashed",
-              "dashed", "solid", "dashed", "solid", "dashed",
-              "solid", "solid");
+# TextColor is for x-axis network label color
+TextColor <- c("#767676", "black", "black", "#767676", "black",
+              "#767676", "black", "#767676", "black", "#767676",
+              "#767676", "black", "#767676", "black", "#767676",
+              "black", "black");
+
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend_indx]
+BorderColor3 <- BorderColor2[pfn_inAscend_indx]
+TextColor_ordered <- TextColor[pfn_inAscend_indx]
 
 Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
   geom_bar(stat = "identity", fill=BorderColor3[sorted_beta], 
-           colour = BorderColor[sorted_beta], linetype = LineType, width = 0.8) + 
-  labs(title = "Anatomical Areal Scaling- CLR", x = "Networks", y = paste0("Group Atlas Allometry")) + theme_classic() +
+           colour = BorderColor[sorted_beta], linetype = "solid", width = 0.8) + 
+  labs(title = NULL, x = NULL, y = paste0("Anatomical Areal Scaling- CLR")) + theme_classic() +
   theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
-  theme(axis.text.x = ggtext::element_markdown(size= 25, color = BorderColor), 
+  theme(axis.text.x = ggtext::element_markdown(size= 22, color = TextColor_ordered), 
         axis.text.y = ggtext::element_markdown(size= 25, color = "black"), 
         axis.title=ggtext::element_markdown(size = 25)) +
-  theme(axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1)) +
-  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_beta)) +
+  theme(axis.text.x = ggtext::element_markdown(angle = 65, hjust = 1, vjust = 0.5, margin = margin(t=-40)), #if numbers, change to 45 + hjust = 1
+    plot.margin = margin(t = 5.5, r = 5.5, b = 40, l = 5.5)) + # comment out if using numbers
+  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_beta)) + #change to pfn_inAscend_indx if using numbers
   scale_y_continuous(
-    limits = c(-0.2, 0.3) # match PFN results (more extreme betas)
+    limits = c(-0.2, 0.3)
   )
 Fig
-ggsave(paste0("../../Results/PNC_Group_Age/CLR/PNC_group_CLR_scaling_plot_0.8-1.31_bonf.png"), width = 19, height = 16, dpi = 600, units = "cm")
+ggsave(paste0("../../Results/PNC_Group_Age/CLR/PNC_Group_CLR_scaling_plot_netnames.png"), width = 19, height = 16, dpi = 600, units = "cm");
+ggsave(paste0("../../Results/PNC_Group_Age/CLR/PNC_Group_CLR_scaling_plot_netnames.pdf"), device = cairo_pdf, width = 19, height = 16, dpi = 600, units = "cm")
 ```
