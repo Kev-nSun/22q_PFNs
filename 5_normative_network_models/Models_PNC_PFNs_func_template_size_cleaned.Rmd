@@ -45,7 +45,7 @@ func_models_size_normed <- list()
 
 for (net in c(1:17)) {
   func_size <-  sprintf("PFN%02d%s",net,"_soft_parcel_normed")
-  func_model <- gam(log(get(func_size)) ~ log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all_size)
+  func_model <- gam(log(get(func_size)) ~ log(TC_area)+sex+euler+median_fd_combined+s(age,k=4),data=PNC_all_size,method = "REML")
   #print(summary(func_model))
   print(tab_model(func_model,pred.labels = c("Intercept","log TC Area","Sex","Euler Number","Median FD","Age Spline"),dv.labels=c(paste0("Net ",net, "Functional Extent")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/log_log_temp_func_area_log_log_net_",net,"_lm.doc")))
   func_models_size_normed[[net]] <- func_model #store all models in list
