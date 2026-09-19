@@ -1,0 +1,1050 @@
+---
+title: "Models_22q_PFN"
+author: "Kevin Sun"
+date: "`1/20/2026`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(sjPlot)
+library(mgcv)
+```
+
+#Import areas and demographics
+```{r}
+#Read in area data
+areas_PNC <- read.csv("../../Inputs/PNC_summary_PFNs.csv") # n = 1482
+colnames(areas_PNC) <- gsub("_soft_parcel_normed", "", colnames(areas_PNC))
+areas_22q <- read.csv("../../Inputs/22q_summary_PFNs.csv") # n = 115
+areas_22q <- areas_22q[areas_22q$session != 8971,] #Remove ses-008971 of sub-016095, since this subject has 2 sessions -> n = 114
+
+#Pool 22q and PNC area data
+areas_22q <- areas_22q[, -2] #remove session column
+areas_all <- rbind(areas_PNC,areas_22q) # n = 1596
+
+#merge pooled areas with matched and pooled demographic dataset
+matched_demo <- read.csv("../../Results/Demographic_matching/matched_all_demo_QC_median_fd_r1x3.csv") # n = 215
+matched_all <- merge(matched_demo,areas_all,by="subject") # n = 215
+
+#write_csv(matched_all,paste0("../../Inputs/22q_PNC_matched_all.csv"))
+
+PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-lh", "DM-A", "SM-rh", "DA-ant", "ParMem", "Auditory", "FP-B")
+```
+
+#Factorize 22q status and sex
+```{r}
+matched_all$stat_22q <- factor(matched_all$stat_22q)
+matched_all$sex <- factor(matched_all$sex)
+matched_all$subclass <- factor(matched_all$subclass)
+```
+
+
+## 22q status * scaling interaction models
+```{r}
+dout <- "../../Results/22q_PFN_Age/Scaling_Interaction_Models_subclass"
+dir.create(dout)
+
+interX_scaling_models <- list()
+
+for (net in c(1:17)) {
+  PFN_area <- sprintf("PFN%02d",net)
+  interX_model <- gam(log(get(PFN_area)) ~ log(TC_area)+stat_22q+log(TC_area)+sex+euler+median_fd_combined+stat_22q*log(TC_area)+s(age,k=4)+s(subclass, bs = "re"),data=matched_all,method = "REML")
+  print(tab_model(interX_model,dv.labels=c(paste0("PFN ",net, " Area")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/PFN_22qxTCA_euler_age_PFN_",net,"_REML_subclass.doc")))
+  interX_scaling_models[[net]] <- interX_model #store all models in list
+}
+```
+
+# Save out betas and bonf p-vals of 22q * scaling interaction term
+```{r}
+dout <- "../../Results/22q_PFN_Age/Scaling_Interaction_Models_subclass"
+
+interX_scaling_mod_results <- matrix(0,17,2)
+
+for (net in c(1:17)) {
+  net_model <- interX_scaling_models[[net]]
+  interX_scaling_mod_results[net,1] <- summary(net_model)$p.table["log(TC_area):stat_22q1", "Estimate"]
+  interX_scaling_mod_results[net,2] <- summary(net_model)$p.table["log(TC_area):stat_22q1", "Pr(>|t|)"]
+}
+
+pvals_bonf <- p.adjust(interX_scaling_mod_results[,2], method = "bonf")
+#PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+interX_scaling_bonf <-  data.frame(PFN = PFN_names, beta = interX_scaling_mod_results[,1], pvals_bonf = pvals_bonf)
+
+write_csv(interX_scaling_bonf,paste0(dout,"/PFN_22qxTCA_interaction_summary_results_bonf_REML_subclass.csv"))
+```
+
+## Scaling, stratified by 22q status
+```{r}
+dout <- "../../Results/22q_PFN_Age/Scaling_stratified_models_subclass"
+dir.create(dout)
+
+del_22q_matched <- matched_all[matched_all$stat_22q == 1, ]
+PNC_matched <- matched_all[matched_all$stat_22q == 0, ]
+
+del_22q_scaling_mods <- list()
+PNC_scaling_mods <- list()
+
+for (net in c(1:17)) {
+  PFN_area <- sprintf("PFN%02d",net)
+  del_scaling_mod <- gam(log(get(PFN_area))~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=del_22q_matched,method = "REML")
+  print(tab_model(del_scaling_mod,dv.labels=c(paste0("PFN ",net, " Area")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/PFN_22q_scaling_PFN",net,"_REML_subclass.doc")))
+  del_22q_scaling_mods[[net]] <- del_scaling_mod #store all models in list
+}
+
+for (net in c(1:17)) {
+  PFN_area <- sprintf("PFN%02d",net)
+  PNC_scaling_mod <- gam(log(get(PFN_area))~log(TC_area)+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=PNC_matched,method = "REML")
+  print(tab_model(PNC_scaling_mod,dv.labels=c(paste0("PFN ",net, " Area")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/PFN_PNC_scaling_PFN",net,"_REML_subclass.doc")))
+  PNC_scaling_mods[[net]] <- PNC_scaling_mod #store all models in list
+}
+```
+
+# Get significance of stratified beta scaling terms via Wald test
+```{r}
+dout <- "../../Results/22q_PFN_Age/Scaling_stratified_models_subclass"
+
+del_log_log_results <- matrix(0,17,2)
+PNC_log_log_results <- matrix(0,17,2)
+
+for (net in c(1:17)) {
+  del_model <- del_22q_scaling_mods[[net]]
+  beta <- summary(del_model)$p.table["log(TC_area)", "Estimate"]
+  SE <- summary(del_model)$p.table["log(TC_area)", "Std. Error"]
+  z_val <- (beta - 1) / SE # Null is beta = 1 (isometry, linear scaling)
+  #df <- df.residual(get(paste0("PFN",net,"_gam")))
+  del_log_log_results[net,1] <- beta
+  del_log_log_results[net,2] <- 2 * (1 - pnorm(abs(z_val))) #Wald test
+  
+  PNC_model <- PNC_scaling_mods[[net]]
+  beta <- summary(PNC_model)$p.table["log(TC_area)", "Estimate"]
+  SE <- summary(PNC_model)$p.table["log(TC_area)", "Std. Error"]
+  z_val <- (beta - 1) / SE # Null is beta = 1 (isometry, linear scaling)
+  #df <- df.residual(get(paste0("PFN",net,"_gam")))
+  PNC_log_log_results[net,1] <- beta
+  PNC_log_log_results[net,2] <- 2 * (1 - pnorm(abs(z_val))) #Wald test
+}
+
+del_pvals_bonf <- p.adjust(del_log_log_results[,2], method = "bonf")
+del_log_log_wald_bonf <-  data.frame(PFN = PFN_names, beta = del_log_log_results[,1], pvals_bonf = del_pvals_bonf)
+
+write_csv(del_log_log_wald_bonf,paste0(dout,"/22q_strat_PFNs_log_log_summary_results_bonf_REML_netnames.csv"))
+
+PNC_pvals_bonf <- p.adjust(PNC_log_log_results[,2], method = "bonf")
+PNC_log_log_wald_bonf <-  data.frame(PFN = PFN_names, beta = PNC_log_log_results[,1], pvals_bonf = PNC_pvals_bonf)
+
+write_csv(PNC_log_log_wald_bonf,paste0(dout,"/PNC_strat_PFNs_log_log_summary_results_bonf_REML_netnames.csv"))
+```
+
+### Bar plot of 22q scaling:
+```{r}
+p_vec_adj<- del_log_log_wald_bonf[,3]
+print(p_vec_adj)
+keep_p <- ifelse(p_vec_adj<.05,1,0)
+print(keep_p)
+
+betas_from_zero <- del_log_log_wald_bonf[,2] - 1
+sorted_beta = rank(betas_from_zero);
+pfn_inAscend_indx <- c()
+for (t in c(1:17)) { pfn_inAscend_indx <- append(pfn_inAscend_indx,which(sorted_beta == t))} #if using numbers, switch all pfn_inAscend to pfn_inAscend_indx and comment out next line
+pfn_inAscend <- PFN_names[pfn_inAscend_indx]
+
+intX_sig <- read.csv("../../Results/22q_PFN_Age/Scaling_Interaction_Models_subclass/PFN_22qxTCA_interaction_summary_results_bonf_REML_subclass.csv")
+intX_sig_p <- intX_sig$pvals_bonf
+stars <- ifelse(intX_sig_p < 0.05, "*", "")
+
+# Using 7 colors scheme for bar plot
+data <- data.frame(EffectSizes = as.numeric(betas_from_zero)) 
+data$EffectRank <- as.numeric(sorted_beta)
+# BorderColor1 is for colors of 1-17 network numbers(to lable the network numbers in a 1-17 order)
+BorderColor1 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
+                 "#AF33AD", "#E443FF", "#E76178", "#E443FF", "#AF33AD",
+                 "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
+                 "#4E31A8", "#F5BA2E");
+				 
+# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN. ("black" is filled with black)
+BorderColor2 <- c("#FFFFFF", "#FFFFFF", "#F5BA2E", "#FFFFFF", "#FFFFFF",
+                 "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                 "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", 
+                 "#FFFFFF", "#FFFFFF");
+
+# TextColor is for x-axis network label color
+TextColor <- c("#767676", "#767676", "black", "#767676", "#767676",
+                 "#767676", "#767676", "#767676", "#767676", "#767676",
+                 "#767676", "#767676", "#767676", "#767676", "#767676", 
+                 "#767676", "#767676");
+
+# Change the color order
+BorderColor <- BorderColor1[pfn_inAscend_indx]
+BorderColor3 <- BorderColor2[pfn_inAscend_indx]
+TextColor_ordered <- TextColor[pfn_inAscend_indx]
+stars_ordered <- stars[pfn_inAscend_indx]
+
+#Add stars to data
+data$stars <- stars_ordered[sorted_beta]
+offset <- 0.02
+data$star_y <- ifelse(data$EffectSizes >= 0,
+                      data$EffectSizes + offset,
+                      data$EffectSizes - offset)
+data$star_vjust <- ifelse(data$EffectSizes >= 0, 0, 1)
+
+Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
+  geom_bar(stat = "identity", fill=BorderColor3[sorted_beta], 
+           colour = BorderColor[sorted_beta], linetype = "solid", width = 0.8) + 
+  geom_text(data = subset(data, stars != ""),
+          aes(x = EffectRank, y = star_y, label = stars, vjust = 0.75),
+          size = 8,
+          fontface = "bold") +
+  labs(title = NULL, x = NULL, y = paste0("PFN Allometry (β)")) + theme_classic() +
+  theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
+  theme(axis.text.x = ggtext::element_markdown(size= 22, color = TextColor_ordered), 
+        axis.text.y = ggtext::element_markdown(size= 25, color = "black"), 
+        axis.title=ggtext::element_markdown(size = 25)) +
+  theme(axis.text.x = ggtext::element_markdown(angle = 65, hjust = 1, vjust = 0.5, margin = margin(t=-40)), #if numbers, change to 45 + hjust = 1
+    plot.margin = margin(t = 5.5, r = 5.5, b = 40, l = 5.5)) + # comment out if using numbers
+  scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_beta)) + #change to pfn_inAscend_indx if using numbers
+  scale_y_continuous(
+    breaks = c(0.6, 0.8, 1.0, 1.2, 1.4) - 1, #set breaks relative to 0
+    limits = c(0.6, 1.43) - 1, 
+    labels = c(0.6, 0.8, 1.0, 1.2, 1.4)  # set labels so betas are shown relative to 1
+  )
+Fig
+ggsave(paste0("../../Results/22q_PFN_Age/Scaling_stratified_models_subclass/22q_PFNs_log_log_scaling_plot_starred_REML_netnames_gray.png"), width = 19, height = 16, dpi = 600, units = "cm");
+ggsave(paste0("../../Results/22q_PFN_Age/Scaling_stratified_models_subclass/22q_PFNs_log_log_scaling_plot_starred_REML_netnames_gray.png"), device = cairo_pdf, width = 19, height = 16, dpi = 600, units = "cm");
+```
+
+# Helper: population-standardized predictions from a GAM
+```{r}
+# ============================================================
+# Helper: population-standardized GAM predictions
+# ============================================================
+
+get_standardized_gam_predictions <- function(
+    model,
+    data,
+    focal_var,
+    focal_values,
+    group_var,
+    group_values = NULL,
+    exclude_terms = NULL
+) {
+
+  if (is.null(group_values)) {
+    if (is.factor(data[[group_var]])) {
+      group_values <- levels(data[[group_var]])
+    } else {
+      group_values <- sort(unique(data[[group_var]]))
+    }
+  }
+
+  beta <- coef(model)
+  Vb   <- vcov(model)
+
+  pred_list <- list()
+  counter <- 1
+
+  for (g in group_values) {
+
+    for (xval in focal_values) {
+
+      nd <- data
+
+      # ------------------------------------------------------
+      # Set focal predictor
+      # ------------------------------------------------------
+
+      nd[[focal_var]] <- xval
+
+
+      # ------------------------------------------------------
+      # Set diagnosis variable while preserving its class
+      # ------------------------------------------------------
+
+      if (is.ordered(data[[group_var]])) {
+      
+        nd[[group_var]] <- ordered(
+          g,
+          levels = levels(data[[group_var]])
+        )
+      
+      } else if (is.factor(data[[group_var]])) {
+      
+        nd[[group_var]] <- factor(
+          g,
+          levels = levels(data[[group_var]])
+        )
+      
+      } else {
+      
+        nd[[group_var]] <- as.numeric(g)
+      
+      }
+
+
+      # ------------------------------------------------------
+      # Linear predictor matrix
+      # ------------------------------------------------------
+
+      X <- predict(
+        model,
+        newdata = nd,
+        type = "lpmatrix",
+        exclude = exclude_terms
+      )
+
+
+      # ------------------------------------------------------
+      # Population standardization
+      # ------------------------------------------------------
+
+      Xbar <- colMeans(X)
+
+      fit <- as.numeric(
+        Xbar %*% beta
+      )
+
+      se <- sqrt(
+        as.numeric(
+          Xbar %*% Vb %*% Xbar
+        )
+      )
+
+      # ------------------------------------------------------
+      # Save
+      # ------------------------------------------------------
+
+      pred_list[[counter]] <- data.frame(
+        x = xval,
+        group = as.character(g),
+        predicted = fit,
+        std.error = se,
+        conf.low = fit - 1.96 * se,
+        conf.high = fit + 1.96 * se
+      )
+
+      counter <- counter + 1
+    }
+  }
+
+  do.call(rbind, pred_list)
+}
+```
+
+# Visualize scaling by 22q interaction effect
+```{r}
+dout <- "../../Results/22q_PFN_Age/Scaling_stratified_models_subclass"
+
+# ============================================================
+# PFN 3: pooled-model scaling interaction
+# ============================================================
+
+net <- 3
+PFN_area <- sprintf("PFN%02d", net)
+
+model_PFN3_scaling <- interX_scaling_models[[net]]
+
+
+# ------------------------------------------------------------
+# Analysis dataset used by the pooled model
+# ------------------------------------------------------------
+
+plot_dat <- matched_all
+
+plot_dat$stat_22q_plot <- as.character(plot_dat$stat_22q)
+
+
+# ------------------------------------------------------------
+# Use common TCA support across groups
+#
+# This is particularly useful for an interaction plot because
+# each pair of fitted curves is evaluated at the same TCA values.
+# ------------------------------------------------------------
+
+PNC_tc_range <- range(
+  PNC_matched$TC_area,
+  na.rm = TRUE
+)
+
+del22q_tc_range <- range(
+  del_22q_matched$TC_area,
+  na.rm = TRUE
+)
+
+tc_min_common <- max(
+  PNC_tc_range[1],
+  del22q_tc_range[1]
+)
+
+tc_max_common <- min(
+  PNC_tc_range[2],
+  del22q_tc_range[2]
+)
+
+# Even spacing on the LOG TCA scale because this is a log-log plot
+TC_grid <- exp(
+  seq(
+    log(tc_min_common),
+    log(tc_max_common),
+    length.out = 100
+  )
+)
+
+
+# ------------------------------------------------------------
+# Population-standardized predictions from pooled model
+# ------------------------------------------------------------
+
+adj_net_area_pred <- get_standardized_gam_predictions(
+  model = model_PFN3_scaling,
+  data = plot_dat,
+  focal_var = "TC_area",
+  focal_values = TC_grid,
+
+  # Must match the variable actually used in the GAM
+  group_var = "stat_22q",
+
+  # Use 0/1 if stat_22q is numeric
+  group_values = c(0, 1),
+
+  # Population-level prediction
+  exclude_terms = "s(subclass)"
+)
+
+adj_net_area_pred$stat_22q <- adj_net_area_pred$group
+
+
+# ------------------------------------------------------------
+# Set plotting window based on BOTH fitted curves + CIs
+#
+# Keep your original equal x/y-range logic.
+# ------------------------------------------------------------
+
+fit_pad_frac <- 0.05
+
+pred_x_min <- min(
+  log(adj_net_area_pred$x),
+  na.rm = TRUE
+)
+
+pred_x_max <- max(
+  log(adj_net_area_pred$x),
+  na.rm = TRUE
+)
+
+fit_y_min <- min(
+  adj_net_area_pred$predicted,
+  adj_net_area_pred$conf.low,
+  na.rm = TRUE
+)
+
+fit_y_max <- max(
+  adj_net_area_pred$predicted,
+  adj_net_area_pred$conf.high,
+  na.rm = TRUE
+)
+
+x_required_range <- pred_x_max - pred_x_min
+y_required_range <- fit_y_max - fit_y_min
+
+plot_range <- max(
+  x_required_range,
+  y_required_range
+)
+
+# Preserve your original choice:
+# plot_range <- plot_range * (1 + 2 * fit_pad_frac)
+
+x_center <- mean(
+  c(pred_x_min, pred_x_max)
+)
+
+y_center <- mean(
+  c(fit_y_min, fit_y_max)
+)
+
+x_min <- x_center - plot_range / 2
+x_max <- x_center + plot_range / 2
+
+y_min <- y_center - plot_range / 2
+y_max <- y_center + plot_range / 2
+
+
+# ------------------------------------------------------------
+# Plot
+# ------------------------------------------------------------
+
+Fig <- ggplot() +
+
+  # Raw observations
+  geom_point(
+    data = plot_dat,
+    aes(
+      x = log(TC_area),
+      y = log(.data[[PFN_area]]),
+      color = stat_22q_plot
+    ),
+    size = 1,
+    alpha = 0.4
+  ) +
+
+  # 95% CI from pooled inferential model
+  geom_ribbon(
+    data = adj_net_area_pred,
+    aes(
+      x = log(x),
+      ymin = conf.low,
+      ymax = conf.high,
+      fill = stat_22q,
+      group = stat_22q
+    ),
+    alpha = 0.20,
+    color = NA
+  ) +
+
+  # Population-standardized scaling curves
+  geom_line(
+    data = adj_net_area_pred,
+    aes(
+      x = log(x),
+      y = predicted,
+      color = stat_22q,
+      group = stat_22q
+    ),
+    linewidth = 1.2
+  ) +
+
+  scale_color_manual(
+    name = NULL,
+    labels = c(
+      "PNC",
+      "22q11DS"
+    ),
+    values = c(
+      "0" = "#4D4D4D",
+      "1" = "#D55E00"
+    )
+  ) +
+
+  scale_fill_manual(
+    name = NULL,
+    labels = c(
+      "PNC",
+      "22q11DS"
+    ),
+    values = c(
+      "0" = "#4D4D4D",
+      "1" = "#D55E00"
+    )
+  ) +
+
+  labs(
+    title = NULL,
+    x = NULL,
+    y = NULL
+  ) +
+
+  theme_classic() +
+
+  theme(
+    plot.title = element_text(
+      size = 25,
+      hjust = 0.5
+    ),
+    axis.text.x = element_text(
+      size = 44.75,
+      color = "black"
+    ),
+    axis.text.y = element_text(
+      size = 44.75,
+      color = "black"
+    ),
+    axis.title.x = element_text(size = 1),
+    axis.title.y = element_text(size = 1),
+
+    legend.position = "right",
+    legend.text = element_text(size = 24)
+  ) +
+
+  coord_cartesian(
+    xlim = c(x_min, x_max),
+    ylim = c(y_min, y_max),
+    clip = "on"
+  ) +
+
+  scale_x_continuous(
+    breaks = c(11.8, 12, 12.2)
+  ) +
+
+  scale_y_continuous(
+    breaks = c(9.4, 9.6, 9.8)
+  )
+
+print(Fig)
+
+
+ggsave(
+  paste0(
+    dout,
+    "/PNC_22q_PFN3_pooled_interaction_log_log_PFN_scaling.png"
+  ),
+  plot = Fig,
+  width = 21.5,
+  height = 16,
+  dpi = 600,
+  units = "cm"
+)
+
+ggsave(
+  paste0(
+    dout,
+    "/PNC_22q_PFN3_pooled_interaction_log_log_PFN_scaling.pdf"
+  ),
+  plot = Fig,
+  device = cairo_pdf,
+  width = 21.5,
+  height = 16,
+  units = "cm"
+)
+```
+
+
+## 22q status * sex interaction models
+```{r}
+dout <- "../../Results/22q_PFN_Age/Sex_Interaction_Models_subclass"
+dir.create(dout)
+
+interX_sex_models <- list()
+
+for (net in c(1:17)) {
+  PFN_area <- sprintf("PFN%02d",net)
+  interX_model <- gam(log(get(PFN_area)) ~stat_22q+log(TC_area)+sex+euler+median_fd_combined+stat_22q*sex+s(age,k=4)+s(subclass, bs = "re"),data=matched_all,method = "REML")
+  print(tab_model(interX_model,dv.labels=c(paste0("PFN ",net, " Area")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/PFN_22qxSex_euler_age_PFN_",net,"_REML_subclass.doc")))
+  interX_sex_models[[net]] <- interX_model #store all models in list
+}
+
+```
+
+# Save out betas and bonf p-vals of 22q * sex interaction term
+```{r}
+dout <- "../../Results/22q_PFN_Age/Sex_Interaction_Models_subclass"
+
+interX_sex_mod_results <- matrix(0,17,2)
+
+for (net in c(1:17)) {
+  net_model <- interX_sex_models[[net]]
+  interX_sex_mod_results[net,1] <- summary(net_model)$p.table["stat_22q1:sexMale", "Estimate"]
+  interX_sex_mod_results[net,2] <- summary(net_model)$p.table["stat_22q1:sexMale", "Pr(>|t|)"]
+}
+
+pvals_bonf <- p.adjust(interX_sex_mod_results[,2], method = "bonf")
+#PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+interX_sex_bonf <-  data.frame(PFN = PFN_names, beta = interX_sex_mod_results[,1], pvals_bonf = pvals_bonf)
+
+write_csv(interX_sex_bonf,paste0(dout,"/PFN_22qxSex_interaction_summary_results_bonf_REML_subclass.csv"))
+```
+
+
+## 22q status * age interaction models
+```{r}
+dout <- "../../Results/22q_PFN_Age/Age_Interaction_Models_subclass"
+dir.create(dout)
+
+matched_all$ord_stat_22q <- ordered(matched_all$stat_22q, levels = c("0","1")) # 0 (no 22q) will be the reference group
+matched_all$log_TC_area <- log(matched_all$TC_area)
+interX_age_models <- list()
+
+for (net in c(1:17)) {
+  PFN_area <- sprintf("PFN%02d",net)
+  interX_model <- gam(log(get(PFN_area)) ~ord_stat_22q+log_TC_area+sex+euler+median_fd_combined+s(age,k=4)+s(age,by=ord_stat_22q,k=4)+s(subclass, bs = "re"),,data=matched_all,method = "REML")
+  print(tab_model(interX_model,dv.labels=c(paste0("PFN ",net, " Area")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/PFN_22qxAge_euler_age_PFN_",net,"_REML_subclass.doc")))
+  interX_age_models[[net]] <- interX_model #store all models in list
+}
+```
+
+# Save out bonf p-vals of 22q * age interaction term
+```{r}
+dout <- "../../Results/22q_PFN_Age/Age_Interaction_Models_subclass"
+
+interX_age_mod_results <- matrix(0,17,2)
+
+for (net in c(1:17)) {
+  net_model <- interX_age_models[[net]]
+  interX_age_mod_results[net,1] <- summary(net_model)$s.table["s(age):ord_stat_22q1", "F"]
+  interX_age_mod_results[net,2] <- summary(net_model)$s.table["s(age):ord_stat_22q1", "p-value"]
+}
+
+pvals_bonf <- p.adjust(interX_age_mod_results[,2], method = "bonf")
+#PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+interX_age_bonf <-  data.frame(PFN = PFN_names, F_stat = interX_age_mod_results[,1], pvals_bonf = pvals_bonf)
+
+write_csv(interX_age_bonf,paste0(dout,"/PFN_22qxAge_interaction_summary_results_bonf_REML_subclass.csv"))
+```
+
+# Visualize 22q * age interaction
+```{r}
+
+# ============================================================
+# PFN 9: pooled age x diagnosis interaction
+# ============================================================
+
+net <- 9
+
+model_PFN9 <- interX_age_models[[net]]
+
+
+# ------------------------------------------------------------
+# Use EXACT dataset used to fit the model
+# ------------------------------------------------------------
+
+age_plot_dat <- matched_all
+
+
+# ------------------------------------------------------------
+# Common observed age support between groups
+# ------------------------------------------------------------
+
+PNC_age_range <- range(
+  age_plot_dat$age[age_plot_dat$stat_22q == 0],
+  na.rm = TRUE
+)
+
+del22q_age_range <- range(
+  age_plot_dat$age[age_plot_dat$stat_22q == 1],
+  na.rm = TRUE
+)
+
+age_min_common <- max(
+  PNC_age_range[1],
+  del22q_age_range[1]
+)
+
+age_max_common <- min(
+  PNC_age_range[2],
+  del22q_age_range[2]
+)
+
+age_grid <- seq(
+  age_min_common,
+  age_max_common,
+  length.out = 100
+)
+
+
+# ------------------------------------------------------------
+# Population-standardized predictions
+# ------------------------------------------------------------
+
+pred <- get_standardized_gam_predictions(
+  model = model_PFN9,
+  data = age_plot_dat,
+  focal_var = "age",
+  focal_values = age_grid,
+  group_var = "ord_stat_22q",
+  group_values = c("0", "1"),
+  exclude_terms = "s(subclass)"
+)
+
+
+# Rename for plotting
+pred$age <- pred$x
+pred$ord_stat_22q <- pred$group
+
+
+# ------------------------------------------------------------
+# Back-transform from log area
+# ------------------------------------------------------------
+
+pred$raw_fitted <- exp(pred$predicted)
+pred$raw_lower  <- exp(pred$conf.low)
+pred$raw_upper  <- exp(pred$conf.high)
+
+
+# ------------------------------------------------------------
+# Plot
+# ------------------------------------------------------------
+
+Fig_age <- ggplot(
+  pred,
+  aes(
+    x = age,
+    y = raw_fitted / 1000,
+    color = ord_stat_22q
+  )
+) +
+
+  geom_ribbon(
+    aes(
+      ymin = raw_lower / 1000,
+      ymax = raw_upper / 1000,
+      fill = ord_stat_22q
+    ),
+    alpha = 0.15,
+    color = NA
+  ) +
+
+  geom_line(
+    linewidth = 1.2
+  ) +
+
+  scale_color_manual(
+    name = NULL,
+    labels = c(
+      "PNC",
+      "22q11DS"
+    ),
+    values = c(
+      "0" = "#4D4D4D",
+      "1" = "#D55E00"
+    )
+  ) +
+
+  scale_fill_manual(
+    name = NULL,
+    labels = c(
+      "PNC",
+      "22q11DS"
+    ),
+    values = c(
+      "0" = "#4D4D4D",
+      "1" = "#D55E00"
+    )
+  ) +
+
+  labs(
+    title = NULL,
+    x = NULL,
+    y = NULL
+  ) +
+
+  theme_classic() +
+
+  theme(
+    plot.title = element_text(
+      size = 25,
+      hjust = 0.5
+    ),
+    axis.text.x = element_text(
+      size = 44.75,
+      color = "black"
+    ),
+    axis.text.y = element_text(
+      size = 44.75,
+      color = "black"
+    ),
+    axis.title.x = element_text(size = 1),
+    axis.title.y = element_text(size = 1),
+
+    legend.position = "right",
+    legend.text = element_text(size = 24)
+  )
+
+print(Fig_age)
+
+
+ggsave(
+  "../../Results/22q_PFN_Age/Age_Interaction_Models_subclass/PFN9_age_interaction_standardized_rawscale_REML_subclass.png",
+  plot = Fig_age,
+  width = 18.5,
+  height = 16,
+  dpi = 600,
+  units = "cm"
+)
+
+ggsave(
+  "../../Results/22q_PFN_Age/Age_Interaction_Models_subclass/PFN9_age_interaction_standardized_rawscale_REML_subclass.pdf",
+  plot = Fig_age,
+  width = 18.5,
+  height = 16,
+  units = "cm",
+  device = cairo_pdf
+)
+
+```
+
+# Visualize 22q * age interaction
+```{r}
+
+# ============================================================
+# PFN 6: pooled age x diagnosis interaction
+# ============================================================
+
+net <- 6
+
+model_PFN6 <- interX_age_models[[net]]
+
+
+# ------------------------------------------------------------
+# Use EXACT dataset used to fit the model
+# ------------------------------------------------------------
+
+age_plot_dat <- matched_all
+
+
+# ------------------------------------------------------------
+# Common observed age support between groups
+# ------------------------------------------------------------
+
+PNC_age_range <- range(
+  age_plot_dat$age[age_plot_dat$stat_22q == 0],
+  na.rm = TRUE
+)
+
+del22q_age_range <- range(
+  age_plot_dat$age[age_plot_dat$stat_22q == 1],
+  na.rm = TRUE
+)
+
+age_min_common <- max(
+  PNC_age_range[1],
+  del22q_age_range[1]
+)
+
+age_max_common <- min(
+  PNC_age_range[2],
+  del22q_age_range[2]
+)
+
+age_grid <- seq(
+  age_min_common,
+  age_max_common,
+  length.out = 100
+)
+
+
+# ------------------------------------------------------------
+# Population-standardized predictions
+# ------------------------------------------------------------
+
+pred <- get_standardized_gam_predictions(
+  model = model_PFN6,
+  data = age_plot_dat,
+  focal_var = "age",
+  focal_values = age_grid,
+  group_var = "ord_stat_22q",
+  group_values = c("0", "1"),
+  exclude_terms = "s(subclass)"
+)
+
+
+# Rename for plotting
+pred$age <- pred$x
+pred$ord_stat_22q <- pred$group
+
+
+# ------------------------------------------------------------
+# Back-transform from log area
+# ------------------------------------------------------------
+
+pred$raw_fitted <- exp(pred$predicted)
+pred$raw_lower  <- exp(pred$conf.low)
+pred$raw_upper  <- exp(pred$conf.high)
+
+
+# ------------------------------------------------------------
+# Plot
+# ------------------------------------------------------------
+
+Fig_age <- ggplot(
+  pred,
+  aes(
+    x = age,
+    y = raw_fitted / 1000,
+    color = ord_stat_22q
+  )
+) +
+
+  geom_ribbon(
+    aes(
+      ymin = raw_lower / 1000,
+      ymax = raw_upper / 1000,
+      fill = ord_stat_22q
+    ),
+    alpha = 0.15,
+    color = NA
+  ) +
+
+  geom_line(
+    linewidth = 1.2
+  ) +
+
+  scale_color_manual(
+    name = NULL,
+    labels = c(
+      "PNC",
+      "22q11DS"
+    ),
+    values = c(
+      "0" = "#4D4D4D",
+      "1" = "#D55E00"
+    )
+  ) +
+
+  scale_fill_manual(
+    name = NULL,
+    labels = c(
+      "PNC",
+      "22q11DS"
+    ),
+    values = c(
+      "0" = "#4D4D4D",
+      "1" = "#D55E00"
+    )
+  ) +
+
+  labs(
+    title = NULL,
+    x = NULL,
+    y = NULL
+  ) +
+
+  theme_classic() +
+
+  theme(
+    plot.title = element_text(
+      size = 25,
+      hjust = 0.5
+    ),
+    axis.text.x = element_text(
+      size = 44.75,
+      color = "black"
+    ),
+    axis.text.y = element_text(
+      size = 44.75,
+      color = "black"
+    ),
+    axis.title.x = element_text(size = 1),
+    axis.title.y = element_text(size = 1),
+
+    legend.position = "right",
+    legend.text = element_text(size = 24)
+  )+
+
+  scale_y_continuous(
+    breaks = c(11, 12, 13)
+  )
+
+print(Fig_age)
+
+
+ggsave(
+  "../../Results/22q_PFN_Age/Age_Interaction_Models_subclass/PFN6_age_interaction_standardized_rawscale_REML_subclass.png",
+  plot = Fig_age,
+  width = 18.5,
+  height = 16,
+  dpi = 600,
+  units = "cm"
+)
+
+ggsave(
+  "../../Results/22q_PFN_Age/Age_Interaction_Models_subclass/PFN6_age_interaction_standardized_rawscale_REML_subclass.pdf",
+  plot = Fig_age,
+  width = 18.5,
+  height = 16,
+  units = "cm",
+  device = cairo_pdf
+)
+
+```
