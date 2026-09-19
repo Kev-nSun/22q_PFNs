@@ -1,0 +1,611 @@
+---
+title: "Demographic Match PNC to 22q Sample"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+library(MatchIt)
+library(tidyr)
+library(dplyr)
+library(cobalt)
+library(ggplot2)
+library(finalfit)
+library(Hmisc)
+library(tidyverse)
+library(rstatix)
+library(ggpubr)
+```
+
+#Read in 22q and PNC demographics data
+```{r}
+demo_PNC <- read_csv('C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Inputs/filtered_demo_PNC.csv') # N = 1332
+demo_22q <- read_csv('C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Inputs/filtered_demo_22q.csv') # N = 100
+colnames(demo_PNC)[1] <- "subject"
+```
+
+# Initial demographic/QC comparison (median fd, Euler, age, sex, race)
+```{r}
+col_names <- c("PNC","SD_PNC","22q","SD_22q","p value")
+row_names <- c("Median_FD", "Euler", "Age", "Female_Prop", "White_Prop")
+QC_demo_stats <- matrix(
+  ncol = length(col_names),
+  nrow = length(row_names),
+  dimnames = list(row_names, col_names)
+)
+
+#median Fd
+avg_med_fd_PNC <- mean(demo_PNC$median_fd_combined)
+QC_demo_stats[1,1] <- avg_med_fd_PNC
+avg_med_fd_22q <- mean(demo_22q$median_fd_combined)
+QC_demo_stats[1,3] <- avg_med_fd_22q
+
+sd_med_fd_PNC <- sd(demo_PNC$median_fd_combined)
+QC_demo_stats[1,2] <- sd_med_fd_PNC
+sd_med_fd_22q <- sd(demo_22q$median_fd_combined)
+QC_demo_stats[1,4] <- sd_med_fd_22q
+
+med_fd_t_test <- t.test(demo_PNC$median_fd_combined, demo_22q$median_fd_combined, alternative = "two.sided", var.equal = FALSE)
+med_fd_t_val <- med_fd_t_test$statistic
+med_fd_p_val <- med_fd_t_test$p.value
+QC_demo_stats[1,5] <- med_fd_p_val
+
+
+#Euler
+avg_euler_PNC <- mean(demo_PNC$euler)
+QC_demo_stats[2,1] <- avg_euler_PNC
+avg_euler_22q <- mean(demo_22q$euler)
+QC_demo_stats[2,3] <- avg_euler_22q
+
+sd_euler_PNC <- sd(demo_PNC$euler)
+QC_demo_stats[2,2] <- sd_euler_PNC
+sd_euler_22q <- sd(demo_22q$euler)
+QC_demo_stats[2,4] <- sd_euler_22q
+
+euler_t_test <- t.test(demo_PNC$euler, demo_22q$euler, alternative = "two.sided", var.equal = FALSE)
+euler_t_val <- euler_t_test$statistic
+euler_p_val <- euler_t_test$p.value
+QC_demo_stats[2,5] <- euler_p_val
+
+#Age
+avg_age_PNC <- mean(demo_PNC$age)
+QC_demo_stats[3,1] <- avg_age_PNC
+avg_age_22q <- mean(demo_22q$age)
+QC_demo_stats[3,3] <- avg_age_22q
+
+sd_age_PNC <- sd(demo_PNC$age)
+QC_demo_stats[3,2] <- sd_age_PNC
+sd_age_22q <- sd(demo_22q$age)
+QC_demo_stats[3,4] <- sd_age_22q
+
+age_t_test <- t.test(demo_PNC$age, demo_22q$age, alternative = "two.sided", var.equal = FALSE)
+age_t_val <- age_t_test$statistic
+age_p_val <- age_t_test$p.value
+QC_demo_stats[3,5] <- age_p_val
+
+#Visualize age distribution
+Fig <- ggplot(demo_PNC, aes(x = age)) +
+  geom_histogram(binwidth = 2,    # Width of the bins
+                 fill = "black", # Fill color of the bars
+                 color = "black") + # Border color of the bars
+  geom_histogram(data = demo_22q, aes(x = age), 
+                 binwidth = 2,    # Width of the bins
+                 fill = "gray", # Fill color of the bars
+                 color = "gray", # Border color of the bars
+                 alpha = 0.7) + 
+  labs(title = paste0("PNC vs 22q11.2DS Age Distribution"),
+       x = "Age)",
+       y = "Number of Subjects") +
+  theme(plot.title = element_text(hjust = 0.5))
+print(Fig)
+
+#Sex
+N_female_PNC <- sum(demo_PNC$sex == "Female")
+N_PNC <- nrow(demo_PNC)
+female_prop_PNC <- N_female_PNC/N_PNC
+QC_demo_stats[4,1] <- female_prop_PNC
+
+N_female_22q <- sum(demo_22q$sex == "Female")
+N_22q <- nrow(demo_22q)
+female_prop_22q <- N_female_22q/N_22q
+QC_demo_stats[4,3] <- female_prop_22q
+
+N_females <- c(N_female_PNC, N_female_22q)
+N_samples <- c(N_PNC, N_22q)
+
+female_prop_test <- prop.test(N_females, N_samples, correct = FALSE)
+female_prop_X <- female_prop_test$statistic
+female_prop_p_val <- female_prop_test$p.value
+QC_demo_stats[4,5] <- female_prop_p_val
+
+
+#Race
+N_White_PNC <- sum(demo_PNC$race == "White")
+N_PNC <- nrow(demo_PNC)
+White_prop_PNC <- N_White_PNC/N_PNC
+QC_demo_stats[5,1] <- White_prop_PNC
+
+N_White_22q <- sum(demo_22q$race == "White")
+N_22q <- nrow(demo_22q)
+White_prop_22q <- N_White_22q/N_22q
+QC_demo_stats[5,3] <- White_prop_22q
+
+N_Whites <- c(N_White_PNC, N_White_22q)
+N_samples <- c(N_PNC, N_22q)
+
+White_prop_test <- prop.test(N_Whites, N_samples, correct = FALSE)
+White_prop_X <- White_prop_test$statistic
+White_prop_p_val <- White_prop_test$p.value
+QC_demo_stats[5,5] <- White_prop_p_val
+
+write.csv(QC_demo_stats,'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/Demographic_matching/PNC_22q_demo_QC_stats.csv', row.names = TRUE)
+
+```
+
+------------------------------
+Create Matched Data
+------------------------------
+
+#Merge 22q and PNC for matching purposes
+```{r}
+demo_22q$stat_22q <- 1
+demo_PNC$stat_22q <- 0
+colnames(demo_PNC)[1] <- "subject"
+
+demo_22q$subject <- gsub("sub-0", "", demo_22q$subject)
+demo_22q$subject <- gsub("sub-", "", demo_22q$subject)
+
+demo_22q_keep <- demo_22q[,c("subject","stat_22q","age","sex","race","median_fd_combined","euler")]
+demo_PNC_keep <- demo_PNC[,c("subject","stat_22q","age","sex","race","median_fd_combined","euler")]
+
+#Pool 2 datasets
+PNC_22q_pooled <- rbind(demo_22q_keep,demo_PNC_keep) #N = 1432
+
+# Pool "Asian" and "Mixed" into "Other" for race
+PNC_22q_pooled$race <- gsub("Asian", "Other", PNC_22q_pooled$race)
+PNC_22q_pooled$race <- gsub("Mixed", "Other", PNC_22q_pooled$race)
+```
+
+
+# 1. Match 1 to 1 with median fd
+```{r}
+m_r1_fd <- matchit(stat_22q ~ age + sex + race + median_fd_combined,
+                  data = PNC_22q_pooled,
+                  method = "nearest",
+                  ratio = 1,
+                  caliper = 0.1,
+                  distance = "glm")
+
+summary(m_r1_fd)
+plot(summary(m_r1_fd))
+matched_r1 <- match.data(m_r1_fd)
+```
+
+# 2. Match 1 to 1 with median fd again after removing round 1 matched controls
+```{r}
+drop_subj <- matched_r1$subject[matched_r1$stat_22q == 0]
+
+PNC_22q_pooled_post_r1 <- PNC_22q_pooled[!(PNC_22q_pooled$subject %in% drop_subj),]
+
+m_r1.2_fd <- matchit(stat_22q ~ age + sex + race + median_fd_combined,
+                  data = PNC_22q_pooled_post_r1,
+                  method = "nearest",
+                  ratio = 1,
+                  caliper = 0.1,
+                  distance = "glm")
+
+summary(m_r1.2_fd)
+plot(summary(m_r1.2_fd))
+matched_r1.2 <- match.data(m_r1.2_fd)
+```
+
+
+# 3. Match 1 to 1 with median fd again after removing round 2 matched controls
+```{r}
+drop_subj <- matched_r1.2$subject[matched_r1.2$stat_22q == 0]
+
+PNC_22q_pooled_post_r1.2 <- PNC_22q_pooled_post_r1[!(PNC_22q_pooled_post_r1$subject %in% drop_subj),]
+
+m_r1.3_fd <- matchit(stat_22q ~ age + sex + race + median_fd_combined,
+                  data = PNC_22q_pooled_post_r1.2,
+                  method = "nearest",
+                  ratio = 1,
+                  caliper = 0.1,
+                  distance = "glm")
+
+summary(m_r1.3_fd)
+plot(summary(m_r1.3_fd))
+matched_r1.3 <- match.data(m_r1.3_fd)
+```
+
+#Pool after 3 rounds of matching and save out matched sample (ratio 1 x3, with median FD- use matched case to define subclasses)
+```{r}
+matched_r1$match_round <- 1
+matched_r1.2$match_round <- 2
+matched_r1.3$match_round <- 3
+
+attach_case_id <- function(dat, round_num) { # use matched case to define subclasses
+
+  case_lookup <- dat %>%
+    filter(stat_22q == 1) %>%
+    select(
+      subclass,
+      matched_case = subject
+    )
+
+  dat %>%
+    left_join(case_lookup, by = "subclass") %>%
+    mutate(match_round = round_num)
+}
+
+matched_r1   <- attach_case_id(matched_r1,   1)
+matched_r1.2 <- attach_case_id(matched_r1.2, 2)
+matched_r1.3 <- attach_case_id(matched_r1.3, 3)
+
+matched_all <- bind_rows(
+  matched_r1,
+  matched_r1.2,
+  matched_r1.3
+) %>%
+  arrange(subject, match_round) %>% # priority: round 1 then 2 then 3
+  group_by(subject) %>%
+  slice(1) %>%                      # keep the earliest match case
+  ungroup()
+
+matched_all <- matched_all %>%
+  mutate(
+    subclass = factor(matched_case)
+  )
+
+subclass_check <- matched_all %>%
+  group_by(subclass) %>%
+  summarise(
+    n_case = sum(stat_22q == 1),
+    n_control = sum(stat_22q == 0),
+    .groups = "drop"
+  )
+
+subclass_check %>%
+  filter(
+    n_case != 1 |
+    n_control < 1 |
+    n_control > 3
+  )
+
+write.csv(matched_all,'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/Demographic_matching/matched_all_demo_QC_median_fd_r1x3.csv', row.names = FALSE)
+```
+
+
+# calculate stats after matching
+```{r}
+
+# ------------------------------------------------------------
+# Helper functions
+# ------------------------------------------------------------
+
+# Standardized mean difference for continuous variables:
+# 22q minus PNC, divided by pooled SD
+smd_continuous <- function(x_control, x_22q) {
+
+  m0 <- mean(x_control, na.rm = TRUE)
+  m1 <- mean(x_22q, na.rm = TRUE)
+
+  sd0 <- sd(x_control, na.rm = TRUE)
+  sd1 <- sd(x_22q, na.rm = TRUE)
+
+  pooled_sd <- sqrt((sd0^2 + sd1^2) / 2)
+
+  if (pooled_sd == 0) {
+    return(NA_real_)
+  }
+
+  (m1 - m0) / pooled_sd
+}
+
+
+# Standardized mean difference for binary variables:
+# 22q minus PNC
+smd_binary <- function(p_control, p_22q) {
+
+  pooled_sd <- sqrt(
+    (
+      p_control * (1 - p_control) +
+      p_22q * (1 - p_22q)
+    ) / 2
+  )
+
+  if (pooled_sd == 0) {
+    return(NA_real_)
+  }
+
+  (p_22q - p_control) / pooled_sd
+}
+
+
+# ------------------------------------------------------------
+# Initialize demographic/QC table
+# ------------------------------------------------------------
+
+col_names <- c(
+  "PNC",
+  "SD_PNC",
+  "22q",
+  "SD_22q",
+  "p_value",
+  "SMD",
+  "Abs_SMD"
+)
+
+row_names <- c(
+  "Median_FD",
+  "Age",
+  "Female_Prop",
+  "White_Prop",
+  "Black_Prop",
+  "Other_Prop"
+)
+
+QC_demo_stats_matched_all <- matrix(
+  NA_real_,
+  ncol = length(col_names),
+  nrow = length(row_names),
+  dimnames = list(row_names, col_names)
+)
+
+
+# ------------------------------------------------------------
+# Sample sizes
+# ------------------------------------------------------------
+
+N_controls <- sum(matched_all$stat_22q == 0)
+N_22q <- sum(matched_all$stat_22q == 1)
+
+cat("PNC controls:", N_controls, "\n")
+cat("22q cases:", N_22q, "\n")
+
+
+# ------------------------------------------------------------
+# Continuous variables
+# ------------------------------------------------------------
+
+continuous_vars <- c(
+  "median_fd_combined",
+  "age"
+)
+
+continuous_rows <- c(
+  "Median_FD",
+  "Age"
+)
+
+for (i in seq_along(continuous_vars)) {
+
+  var <- continuous_vars[i]
+  row <- continuous_rows[i]
+
+  x_control <- matched_all[
+    matched_all$stat_22q == 0,
+    var,
+    drop = TRUE
+  ]
+
+  x_22q <- matched_all[
+    matched_all$stat_22q == 1,
+    var,
+    drop = TRUE
+  ]
+
+  # Group summaries
+  QC_demo_stats_matched_all[row, "PNC"] <-
+    mean(x_control, na.rm = TRUE)
+
+  QC_demo_stats_matched_all[row, "SD_PNC"] <-
+    sd(x_control, na.rm = TRUE)
+
+  QC_demo_stats_matched_all[row, "22q"] <-
+    mean(x_22q, na.rm = TRUE)
+
+  QC_demo_stats_matched_all[row, "SD_22q"] <-
+    sd(x_22q, na.rm = TRUE)
+
+  # Welch t-test
+  test <- t.test(
+    x_control,
+    x_22q,
+    alternative = "two.sided",
+    var.equal = FALSE
+  )
+
+  QC_demo_stats_matched_all[row, "p_value"] <-
+    test$p.value
+
+  # Standardized mean difference
+  smd <- smd_continuous(
+    x_control,
+    x_22q
+  )
+
+  QC_demo_stats_matched_all[row, "SMD"] <- smd
+  QC_demo_stats_matched_all[row, "Abs_SMD"] <- abs(smd)
+}
+
+
+# ------------------------------------------------------------
+# Sex: Female proportion
+# ------------------------------------------------------------
+
+N_female_control <- sum(
+  matched_all$stat_22q == 0 &
+    matched_all$sex == "Female",
+  na.rm = TRUE
+)
+
+N_female_22q <- sum(
+  matched_all$stat_22q == 1 &
+    matched_all$sex == "Female",
+  na.rm = TRUE
+)
+
+female_prop_control <-
+  N_female_control / N_controls
+
+female_prop_22q <-
+  N_female_22q / N_22q
+
+
+QC_demo_stats_matched_all[
+  "Female_Prop",
+  "PNC"
+] <- female_prop_control
+
+QC_demo_stats_matched_all[
+  "Female_Prop",
+  "22q"
+] <- female_prop_22q
+
+
+female_test <- prop.test(
+  x = c(
+    N_female_control,
+    N_female_22q
+  ),
+  n = c(
+    N_controls,
+    N_22q
+  ),
+  correct = FALSE
+)
+
+QC_demo_stats_matched_all[
+  "Female_Prop",
+  "p_value"
+] <- female_test$p.value
+
+
+female_smd <- smd_binary(
+  female_prop_control,
+  female_prop_22q
+)
+
+QC_demo_stats_matched_all[
+  "Female_Prop",
+  "SMD"
+] <- female_smd
+
+QC_demo_stats_matched_all[
+  "Female_Prop",
+  "Abs_SMD"
+] <- abs(female_smd)
+
+
+# ------------------------------------------------------------
+# Race category proportions
+# ------------------------------------------------------------
+
+race_levels <- c(
+  "White",
+  "Black",
+  "Other"
+)
+
+race_rows <- paste0(
+  race_levels,
+  "_Prop"
+)
+
+for (i in seq_along(race_levels)) {
+
+  race_level <- race_levels[i]
+  row <- race_rows[i]
+
+  n_control <- sum(
+    matched_all$stat_22q == 0 &
+      matched_all$race == race_level,
+    na.rm = TRUE
+  )
+
+  n_22q <- sum(
+    matched_all$stat_22q == 1 &
+      matched_all$race == race_level,
+    na.rm = TRUE
+  )
+
+  prop_control <- n_control / N_controls
+  prop_22q <- n_22q / N_22q
+
+
+  QC_demo_stats_matched_all[
+    row,
+    "PNC"
+  ] <- prop_control
+
+  QC_demo_stats_matched_all[
+    row,
+    "22q"
+  ] <- prop_22q
+
+
+  # Category-specific proportion test
+  prop_test <- prop.test(
+    x = c(n_control, n_22q),
+    n = c(N_controls, N_22q),
+    correct = FALSE
+  )
+
+  QC_demo_stats_matched_all[
+    row,
+    "p_value"
+  ] <- prop_test$p.value
+
+
+  # Category-specific SMD
+  smd <- smd_binary(
+    prop_control,
+    prop_22q
+  )
+
+  QC_demo_stats_matched_all[
+    row,
+    "SMD"
+  ] <- smd
+
+  QC_demo_stats_matched_all[
+    row,
+    "Abs_SMD"
+  ] <- abs(smd)
+}
+
+
+# ------------------------------------------------------------
+# Omnibus race comparison
+# ------------------------------------------------------------
+
+race_table <- table(
+  matched_all$stat_22q,
+  matched_all$race
+)
+
+race_omnibus_test <- chisq.test(
+  race_table,
+  correct = FALSE
+)
+
+race_omnibus_p <- race_omnibus_test$p.value
+
+cat(
+  "Omnibus race p-value:",
+  race_omnibus_p,
+  "\n"
+)
+
+
+# ------------------------------------------------------------
+# Final balance table
+# ------------------------------------------------------------
+
+QC_demo_stats_matched_all <-
+  as.data.frame(QC_demo_stats_matched_all)
+
+write.csv(QC_demo_stats_matched_all,'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/Demographic_matching/stats_matched_all_demo_QC_median_fd_r1x3.csv', row.names = TRUE)
+```
