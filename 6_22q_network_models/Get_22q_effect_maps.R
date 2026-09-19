@@ -10,8 +10,8 @@ del22q_PFN_TCA_cont <- read.csv("../../Results/22q_PFN_Age/subclass/22q_PFN_TCA_
 del22q_PFN_TCA_uncont <- read.csv("../../Results/22q_PFN_Age/No_TCA/subclass/22q_PFN_no_TCA_summary_results_bonf_REML_subclass.csv")
 del22q_group_TCA_cont <- read.csv("../../Results/22q_Group_Age/subclass/22q_Group_TCA_euler_age_summary_results_bonf_REML_netnames_subclass.csv")
 del22q_group_TCA_uncont <- read.csv("../../Results/22q_Group_Age/No_TCA/subclass/22q_Group_no_TCA_age_summary_results_bonf_REML_netnames_subclass.csv")
-del22q_func_size_TCA_cont <- read.csv("../../Results/22q_PFN_Func_Temp/subclass/Normed_raw_22q_temp_func_area_summary_results_subclass.csv")
-del22q_func_size_TCA_uncont <- read.csv("../../Results/22q_PFN_Func_Temp/subclass/Normed_raw_22q_temp_func_area_no_TCA_summary_results_subclass.csv")
+del22q_func_size_TCA_cont <- read.csv("../../Results/22q_PFN_Func_Temp/subclass/log_log_22q_temp_func_area_summary_results_subclass.csv")
+del22q_func_size_TCA_uncont <- read.csv("../../Results/22q_PFN_Func_Temp/subclass/log_log_22q_temp_func_area_no_TCA_summary_results_subclass.csv")
 
 #Get network IDs
 vertex_ID_lh <- Hard_parcel_map$data$cortex_left
