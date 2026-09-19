@@ -84,7 +84,7 @@ dir.create(dout)
 
 model_22q_TCA_log <- gam(log(TC_area) ~ stat_22q+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all,method = "REML")
 print(summary(model_22q_TCA_log))
-#print(tab_model(model_22q_TCA_log,digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/22q_Effect_on_TCA_log_REML_subclass.doc")))
+print(tab_model(model_22q_TCA_log,digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/22q_Effect_on_TCA_log_REML_subclass.doc")))
 
 ```
 
@@ -95,7 +95,7 @@ dir.create(dout)
 
 model_22q_TCA_raw <- gam(TC_area ~ stat_22q+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all,method = "REML")
 print(summary(model_22q_TCA_raw))
-#print(tab_model(model_22q_TCA_raw,digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/Raw_22q_Effect_on_TCA_REML_subclass.doc")))
+print(tab_model(model_22q_TCA_raw,digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/Raw_22q_Effect_on_TCA_REML_subclass.doc")))
 
 ```
 
@@ -578,14 +578,14 @@ BorderColor1 <- c("#E76178", "#7499C2", "#F5BA2E", "#7499C2", "#00A131",
                  "#7499C2", "#E76178", "#7499C2", "#00A131", "#F5BA2E", 
                  "#4E31A8", "#F5BA2E");
 				 
-# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN. ("black" is filled with black)
-BorderColor2 <- c("#E76178", "#FFFFFF", "#FFFFFF", "#7499C2", "#00A131",
+# BorderColor2 is for colors of bar fill 1-17 networks (in a 1-17 order). If the bar is nofill, change the code to "#FFFFFF" for that PFN.
+BorderColor2 <- c("#E76178", "#FFFFFF", "#F5BA2E", "#7499C2", "#00A131",
                  "#AF33AD", "#FFFFFF", "#E76178", "#E443FF", "#AF33AD",
                  "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", 
                  "#4E31A8", "#F5BA2E");
 
-# TextColor is for network label color
-TextColor <- c("black", "#767676", "#767676", "black", "black",
+# TextColor is for network label color.
+TextColor <- c("black", "#767676", "black", "black", "black",
                  "black", "#767676", "black", "black", "black",
                  "#767676", "#767676", "#767676", "#767676", "#767676", 
                  "black", "black");
