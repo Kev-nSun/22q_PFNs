@@ -5,11 +5,13 @@ library(readr)
 # dirin <- "C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/22q_PFN_loadings_gam_results_subclass/091426_22q_logTC_vert_normed_loadings_FDR_pval_beta_subclass/"
 # dirout <- "C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/22q_PFN_loadings_gam_results_subclass/Normed_TCA/"
 # dir.create(dirout)
+# cov_mod <- "TCA"
 
 #no TCA
 dirin <- "C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/22q_PFN_loadings_gam_results_subclass/091426_22q_no_TCA_vert_normed_loadings_FDR_pval_beta_subclass/"
 dirout <- "C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/22q_PFN_loadings_gam_results_subclass/Normed_no_TCA/"
 dir.create(dirout)
+cov_mod <- "no_TCA"
 
 var_verts <- read.csv("C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Variable_vertices_PFN_masks/PFN_var_verts.csv")
 
@@ -70,4 +72,4 @@ colnames(sig_mat) <- c(
 PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
 
 sig_22q_summary <- data.frame(PFN = PFN_names, sig_mat)
-write_csv(sig_22q_summary,paste0(dirout,"/22q_gam_vert_normed_loadings_FDR_beta_summary_no_TCA.csv"))
+write_csv(sig_22q_summary,paste0(dirout,"/22q_gam_vert_normed_loadings_FDR_beta_summary_",cov_mod,".csv"))

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
 TCA-controlled:
-python FDR_correct_22q_vert_loading_gams.py\
+python FDR_correct_22q_vert_loading_gams.py \
     --h5 "/cbica/projects/bbl_22q/analysis/topography/results/091426_normed_22q_vert_gam_results_nonstd_sex_avg_logTC_subclass.h5" \
     --outdir "/cbica/projects/bbl_22q/analysis/topography/results/091426_22q_logTC_vert_normed_loadings_FDR_pval_beta_subclass/"
 
 no TCA cov:
-python FDR_correct_22q_vert_loading_gams.py\
+python FDR_correct_22q_vert_loading_gams.py \
     --h5 "/cbica/projects/bbl_22q/analysis/topography/results/091426_normed_22q_vert_gam_results_nonstd_sex_avg_no_TCA_subclass.h5" \
     --outdir "/cbica/projects/bbl_22q/analysis/topography/results/091426_22q_no_TCA_vert_normed_loadings_FDR_pval_beta_subclass/"
 
