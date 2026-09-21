@@ -822,7 +822,7 @@ for (i in seq_len(nrow(links))) {
 }
 
 # standardize sector width across scaling and 22q
-common_sector_width <- 1000
+common_sector_width <- 40
 #   max(
 #   incident_weight
 # ) * 1.15
@@ -920,7 +920,7 @@ write_csv(
 # DRAW FIGURE
 #==========================================================
 
-filename <- paste0("22q_tradeoff_chord_even_networks_overlap_territory_normed_0.025_beta",cov_mod,".pdf")
+filename <- paste0("22q_tradeoff_chord_even_networks_overlap_territory_normed_0.025_beta_sw_40",cov_mod,".pdf")
 cairo_pdf(
   filename = file.path(
     dirout,
