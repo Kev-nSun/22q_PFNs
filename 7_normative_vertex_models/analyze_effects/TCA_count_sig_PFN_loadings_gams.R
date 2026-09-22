@@ -46,6 +46,7 @@ for (PFN in 1:17) {
   sig_mat[PFN, 6] <- pos_sig_verts / n_var
   sig_mat[PFN, 7] <- neg_sig_verts / n_var
   sig_mat[PFN, 8] <- (pos_sig_verts - neg_sig_verts) / n_var
+  sig_mat[PFN, 9] <- mean_sig_beta
 }
 
 sig_mat <- data.frame(sig_mat)
@@ -58,7 +59,8 @@ colnames(sig_mat) <- c(
   "Sig_Neg",
   "Pos_Prop",
   "Neg_Prop",
-  "Directional_Diff"
+  "Directional_Diff",
+  "Mean_sig_Beta"
 )
 
 PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
