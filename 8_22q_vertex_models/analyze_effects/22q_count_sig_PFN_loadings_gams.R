@@ -73,7 +73,8 @@ colnames(sig_mat) <- c(
   "Sig_Neg",
   "Pos_Prop",
   "Neg_Prop",
-  "Directional_Diff"
+  "Directional_Diff",
+  "Mean_Sig_Beta"
 )
 
 PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-lh", "DM-A", "SM-rh", "DA-ant", "ParMem", "Auditory", "FP-B")
