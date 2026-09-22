@@ -32,7 +32,7 @@ colnames(PNC_TC_and_PFNs_network_areas)[11] <- "PFN9_soft_parcel_normed"
 PNC_demos <- read.csv("../../Inputs/filtered_demo_PNC.csv") #n = 1332
 PNC_all <- merge(PNC_TC_and_PFNs_network_areas,PNC_demos,by="participant_id") # n = 1332
 
-#write_csv(PNC_all,paste0("../../Inputs/PNC_filtered_all.csv"))
+write_csv(PNC_all,paste0("../../Inputs/PNC_filtered_all.csv"))
 
 PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-lh", "DM-A", "SM-rh", "DA-ant", "ParMem", "Auditory", "FP-B")
 
