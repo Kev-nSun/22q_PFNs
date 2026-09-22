@@ -16,7 +16,7 @@ cov_mod <- "TCA"
 var_verts <- read.csv("C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Variable_vertices_PFN_masks/PFN_var_verts.csv")
 
 #COUNT NUMBER OF SIG VERTICES, FDR THRESHOLDED ACROSS ALL NETWORKS:
-sig_mat <- matrix(NA_real_, 17, 8)
+sig_mat <- matrix(NA_real_, 17, 9)
 
 for (PFN in 1:17) {
   
@@ -45,6 +45,12 @@ for (PFN in 1:17) {
   pos_sig_verts <- sum(sig & beta > 0, na.rm = TRUE)
   neg_sig_verts <- sum(sig & beta < 0, na.rm = TRUE)
   
+  # Mean beta among all FDR-significant vertices
+  mean_sig_beta <- if (sig_verts > 0) {
+    mean(beta[sig], na.rm = TRUE)
+  } else {
+    NA_real_
+  }
   
   sig_mat[PFN, 1] <- n_var
   sig_mat[PFN, 2] <- sig_verts
@@ -54,6 +60,7 @@ for (PFN in 1:17) {
   sig_mat[PFN, 6] <- pos_sig_verts / n_var
   sig_mat[PFN, 7] <- neg_sig_verts / n_var
   sig_mat[PFN, 8] <- (pos_sig_verts - neg_sig_verts) / n_var
+  sig_mat[PFN, 9] <- mean_sig_beta
 }
 
 sig_mat <- data.frame(sig_mat)
@@ -69,7 +76,7 @@ colnames(sig_mat) <- c(
   "Directional_Diff"
 )
 
-PFN_names <- c("PFN1", "PFN2", "PFN3", "PFN4", "PFN5", "PFN6", "PFN7", "PFN8", "PFN9", "PFN10", "PFN11", "PFN12", "PFN13", "PFN14", "PFN15", "PFN16", "PFN17")
+PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-lh", "DM-A", "SM-rh", "DA-ant", "ParMem", "Auditory", "FP-B")
 
 sig_22q_summary <- data.frame(PFN = PFN_names, sig_mat)
 write_csv(sig_22q_summary,paste0(dirout,"/22q_gam_vert_normed_loadings_FDR_beta_summary_",cov_mod,".csv"))
