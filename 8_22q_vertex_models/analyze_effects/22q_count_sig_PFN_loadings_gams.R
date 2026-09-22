@@ -2,16 +2,16 @@
 library(readr)
 
 #TCA
-# dirin <- "C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/22q_PFN_loadings_gam_results_subclass/091426_22q_logTC_vert_normed_loadings_FDR_pval_beta_subclass/"
-# dirout <- "C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/22q_PFN_loadings_gam_results_subclass/Normed_TCA/"
-# dir.create(dirout)
-# cov_mod <- "TCA"
+dirin <- "C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/22q_PFN_loadings_gam_results_subclass/091426_22q_logTC_vert_normed_loadings_FDR_pval_beta_subclass/"
+dirout <- "C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/22q_PFN_loadings_gam_results_subclass/Normed_TCA/"
+dir.create(dirout)
+cov_mod <- "TCA"
 
 #no TCA
-dirin <- "C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/22q_PFN_loadings_gam_results_subclass/091426_22q_no_TCA_vert_normed_loadings_FDR_pval_beta_subclass/"
-dirout <- "C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/22q_PFN_loadings_gam_results_subclass/Normed_no_TCA/"
-dir.create(dirout)
-cov_mod <- "no_TCA"
+# dirin <- "C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/22q_PFN_loadings_gam_results_subclass/091426_22q_no_TCA_vert_normed_loadings_FDR_pval_beta_subclass/"
+# dirout <- "C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Analyses/Results/22q_PFN_loadings_gam_results_subclass/Normed_no_TCA/"
+# dir.create(dirout)
+# cov_mod <- "no_TCA"
 
 var_verts <- read.csv("C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/Variable_vertices_PFN_masks/PFN_var_verts.csv")
 
