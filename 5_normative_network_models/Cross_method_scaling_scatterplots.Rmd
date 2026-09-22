@@ -1,0 +1,292 @@
+---
+title: "Plot_scaling_effect_scatterplots"
+author: "Kevin Sun"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(dplyr)
+library(readr)
+```
+
+## Import scaling effects
+```{r}
+PNC_PFN_scaling_effects <- read.csv("../../Results/PNC_PFN_Age/PNC_PFNs_log_log_summary_results_bonf_REML_netnames.csv")
+PNC_group_scaling_effects <- read.csv("../../Results/PNC_Group_Age/PNC_group_log_log_summary_results_bonf_REML_netnames.csv")
+PNC_PFN_func_effects <- read.csv("../../Results/PNC_PFN_Func_Temp/log_log_temp_func_area_summary_results.csv")
+```
+
+## Plot group scaling vs PFN scaling
+```{r}
+dout <- "../../Results/Scatterplots"
+dir.create(dout)
+
+Group_atlas_size <- read.csv("../../../PNC_data/PNC_group_atlas/PNC_Group_atlas_PFN_sizes_and_avg_loading.csv")
+Group_v_PFN_diff <- read.csv("../../Results/PNC_Delta_models/PNC_Group_vs_PFN_boot_results_two_sided.csv")
+Group_v_PFN_scaling <- data.frame(
+  Group_effects = PNC_group_scaling_effects$beta, 
+  PFN_effects = PNC_PFN_scaling_effects$beta,
+  sig_diff = Group_v_PFN_diff$p_delta_beta_bonf < 0.05) #outline indicates difference between func and group area models
+Group_v_PFN_scaling$network <- factor(c("DM","SM","FP","SM","DA","VS","VA","DM","VA","VS","SM","DM","SM","DA","FP","AU","FP"),levels = c("DM","FP","VA","DA","AU","SM","VS"))
+
+Group_v_PFN_scaling$outline <- ifelse(
+  Group_v_PFN_scaling$sig_diff,
+  "Black",
+  "Transparent"
+)
+
+Group_v_PFN_scaling$segment_outline <- ifelse(
+  Group_v_PFN_scaling$outline == "Transparent",
+  "Gray",
+  Group_v_PFN_scaling$outline
+)
+
+net_colors <- c(
+  "DM" = "#E76178",
+  "SM" = "#7499C2",
+  "FP" = "#F5BA2E",
+  "DA" = "#00A131",
+  "VS" = "#AF33AD",
+  "VA" = "#E443FF",
+  "AU" = "#4E31A8"
+)
+
+network_sizes_vert_count <- Group_atlas_size$PFN_size
+network_sizes_normed <- network_sizes_vert_count/1000
+Group_v_PFN_scaling$network_size <- network_sizes_normed
+
+Fig <- ggplot(data = Group_v_PFN_scaling, aes(x = Group_effects, y = PFN_effects)) +
+    geom_hline(yintercept = 1, linetype = "dashed", color = "#474747") +
+    geom_vline(xintercept = 1, linetype = "dashed", color = "#474747") +
+    # Residual/deviation lines from identity line y = x
+    geom_segment(
+      aes(
+        x = Group_effects,
+        xend = Group_effects,
+        y = Group_effects,
+        yend = PFN_effects,
+        color = segment_outline,
+      ),
+      linewidth = 1,
+      show.legend = FALSE
+    ) +
+    geom_abline(intercept = 0, slope = 1, color = "black", linewidth = 1) +
+    #geom_smooth(method = "lm", color = "gray", linetype = "dashed", se = FALSE, alpha = 0.2) +
+    geom_point(
+      aes(fill = network, color = outline, size = network_size),
+      shape = 21,
+      stroke = 1.5,
+      show.legend = c(fill = TRUE, color = FALSE, size = FALSE)
+    ) +
+    scale_fill_manual(
+      values = net_colors,
+      name = NULL,
+      guide = guide_legend(
+        override.aes = list(
+          color = NA,
+          stroke = 0,
+          size = 5
+        )
+      )
+    ) +
+    scale_color_manual(
+      values = c("Black" = "black", "Transparent" = "transparent"),
+      guide = "none"
+    ) +
+    scale_size_continuous(range = c(3, 8)) +
+    guides(size = "none", color = guide_legend(override.aes = list(size = 3, color = "transparent", stroke = 0))) +
+    labs(title = NULL,
+           x = expression("Group Atlas Allometry (β)"),
+           y = bquote("PFN Allometry (β)")) +
+    theme_classic() +
+    theme(
+      plot.title = NULL,
+      axis.text.x = element_text(size = 25, color = "black"),
+      axis.text.y = element_text(size = 25, color = "black"),
+      axis.title  = element_text(size = 25)
+    ) +
+    coord_cartesian(xlim = c(0.93, 1.07), ylim = c(0.7, 1.3), clip = "off") +
+    theme(legend.position = "none")
+print(Fig)
+ggsave(paste0(dout,"/All_networks_group_vs_PFN_scaling_effects_with_corr_points_3_8_outlines_equality_residual_lines_no_legend.png"), width = 17.5, height = 16, dpi = 600, units = "cm")
+ggsave(paste0(dout,"/All_networks_group_vs_PFN_scaling_effects_with_corr_points_3_8_outlines_equality_residual_lines_no_legend.pdf"), device = cairo_pdf, width = 17.5, height = 16, dpi = 600, units = "cm")
+
+```
+
+## Plot functional extent size vs PFN area scaling
+```{r}
+dout <- "../../Results/Scatterplots"
+dir.create(dout)
+
+Group_atlas_size <- read.csv("../../../PNC_data/PNC_group_atlas/PNC_Group_atlas_PFN_sizes_and_avg_loading.csv")
+Func_size_v_PFN_scaling <- data.frame(
+  Func_size_effects = PNC_PFN_func_effects$beta, 
+  PFN_effects = PNC_PFN_scaling_effects$beta,
+  sig_PFN = PNC_PFN_scaling_effects$pvals_bonf < 0.05) # outline indicates sig func area models
+Func_size_v_PFN_scaling$network <- factor(c("DM","SM","FP","SM","DA","VS","VA","DM","VA","VS","SM","DM","SM","DA","FP","AU","FP"),levels = c("DM","FP","VA","DA","AU","SM","VS"))
+
+Func_size_v_PFN_scaling$outline <- ifelse(
+  Func_size_v_PFN_scaling$sig_PFN,
+  "Black",
+  "Transparent"
+)
+
+net_colors <- c(
+  "DM" = "#E76178",
+  "SM" = "#7499C2",
+  "FP" = "#F5BA2E",
+  "DA" = "#00A131",
+  "VS" = "#AF33AD",
+  "VA" = "#E443FF",
+  "AU" = "#4E31A8"
+)
+
+network_sizes_vert_count <- Group_atlas_size$PFN_size
+network_sizes_normed <- network_sizes_vert_count/1000
+Func_size_v_PFN_scaling$network_size <- network_sizes_normed
+
+Fig <- ggplot(data = Func_size_v_PFN_scaling, aes(x = Func_size_effects, y = PFN_effects)) +
+    geom_hline(yintercept = 1, linetype = "dashed", color = "#474747") +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "#474747") +
+    geom_smooth(method = "lm", color = "gray", fill = "gray", alpha = 0.2) +
+    geom_point(
+      aes(fill = network, color = outline, size = network_size),
+      shape = 21,
+      stroke = 2.5,
+      show.legend = c(fill = TRUE, color = FALSE, size = FALSE)
+    ) +
+    scale_fill_manual(values = net_colors, name = "Network") +
+    scale_color_manual(
+      values = c("Black" = "black", "Transparent" = "transparent"),
+      guide = "none"
+    ) +
+    scale_size_continuous(range = c(3, 8)) +
+    guides(color = guide_legend(override.aes = list(size = 3)),size = "none") +
+    labs(title = paste0(NULL),
+           x = expression("Functional Extent Scaling"),
+           y = bquote("PFN Allometry (β)")) +
+    theme_classic() +
+    theme(
+      plot.title = NULL,
+      axis.text.x = element_text(size = 25, color = "black"),
+      axis.text.y = element_text(size = 25, color = "black"),
+      axis.title  = element_text(size = 25)
+    ) +
+    coord_cartesian(xlim = c(-0.25, 0.25), ylim = c(0.7, 1.3), clip = "off") +
+    theme(legend.position = "none")
+print(Fig)
+ggsave(paste0(dout,"/All_networks_Func_ext_temp_vs_PFN_scaling_effects_with_corr_points_3_8_outlines_no_legend.png"), width = 17.5, height = 16, dpi = 600, units = "cm")
+ggsave(paste0(dout,"/All_networks_Func_ext_temp_vs_PFN_scaling_effects_with_corr_points_3_8_outlines_no_legend.pdf"), device = cairo_pdf, width = 17.5, height = 16, dpi = 600, units = "cm")
+
+```
+## Plot functional extent size vs group atlas area scaling
+```{r}
+dout <- "../../Results/Scatterplots"
+dir.create(dout)
+
+Group_atlas_size <- read.csv("../../../PNC_data/PNC_group_atlas/PNC_Group_atlas_PFN_sizes_and_avg_loading.csv")
+Group_v_Func_size <- data.frame(
+  Func_size_effects = PNC_PFN_func_effects$beta, 
+  Group_effects = PNC_group_scaling_effects$beta,
+  sig_PFN = PNC_PFN_scaling_effects$pvals_bonf < 0.05) # outline indicates sig func area models
+Group_v_Func_size$network <- factor(c("DM","SM","FP","SM","DA","VS","VA","DM","VA","VS","SM","DM","SM","DA","FP","AU","FP"),levels = c("DM","FP","VA","DA","AU","SM","VS"))
+
+Group_v_Func_size$outline <- ifelse(
+  Group_v_Func_size$sig_PFN,
+  "Black",
+  "Transparent"
+)
+
+net_colors <- c(
+  "DM" = "#E76178",
+  "SM" = "#7499C2",
+  "FP" = "#F5BA2E",
+  "DA" = "#00A131",
+  "VS" = "#AF33AD",
+  "VA" = "#E443FF",
+  "AU" = "#4E31A8"
+)
+
+network_sizes_vert_count <- Group_atlas_size$PFN_size
+network_sizes_normed <- network_sizes_vert_count/1000
+Group_v_Func_size$network_size <- network_sizes_normed
+
+Fig <- ggplot(data = Group_v_Func_size, aes(x = Func_size_effects, y = Group_effects, fill = network)) +
+    geom_hline(yintercept = 1, linetype = "dashed", color = "#474747") +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "#474747") +
+    geom_smooth(method = "lm", color = "gray", fill = "gray", alpha = 0.2) +
+    geom_point(
+      aes(fill = network, color = outline, size = network_size),
+      shape = 21,
+      stroke = 2.5,
+      show.legend = c(fill = TRUE, color = FALSE, size = FALSE)
+    ) +
+    scale_fill_manual(values = net_colors, name = "Network") +
+    scale_color_manual(
+      values = c("Black" = "black", "Transparent" = "transparent"),
+      guide = "none"
+    ) +
+    scale_size_continuous(range = c(3, 8)) +
+    guides(color = guide_legend(override.aes = list(size = 3)),size = "none") +
+    labs(title = NULL,
+           x = expression("Group Atlas Allometry (β)"),
+           y = bquote("Functional Extent Scaling")) +
+    theme_classic() +
+    theme(
+      plot.title = NULL,
+      axis.text.x = element_text(size = 25, color = "black"),
+      axis.text.y = element_text(size = 25, color = "black"),
+      axis.title  = element_text(size = 25)
+    ) +
+    coord_cartesian(xlim = c(-0.25, 0.25), ylim = c(0.93, 1.07), clip = "off") +
+    theme(legend.position = "none")
+print(Fig)
+ggsave(paste0(dout,"/All_networks_Func_ext_temp_vs_Group_scaling_effects_with_corr_points_3_8_outlines_no_legend.png"), width = 21, height = 16, dpi = 600, units = "cm")
+ggsave(paste0(dout,"/All_networks_Func_ext_temp_vs_Group_scaling_effects_with_corr_points_3_8_outlines_no_legend.pdf"), device = cairo_pdf, width = 17, height = 16, dpi = 600, units = "cm")
+```
+
+
+## Correlations between 3 network models of scaling
+```{r}
+dout <- "../../Results/Scatterplots"
+dir.create(dout)
+
+Group_v_PFN_pearson <- cor.test(Group_v_PFN_scaling$PFN_effects, Group_v_PFN_scaling$Group_effects, method = "pearson")
+Group_v_PFN_spearman <- cor.test(Group_v_PFN_scaling$PFN_effects, Group_v_PFN_scaling$Group_effects, method = "spearman")
+
+Func_size_v_PFN_pearson <- cor.test(Func_size_v_PFN_scaling$PFN_effects, Func_size_v_PFN_scaling$Func_size_effects, method = "pearson")
+Func_size_v_PFN_spearman <- cor.test(Func_size_v_PFN_scaling$PFN_effects, Func_size_v_PFN_scaling$Func_size_effects, method = "spearman")
+
+Group_v_Func_size_pearson <- cor.test(Group_v_Func_size$Group_effects, Group_v_Func_size$Func_size_effects, method = "pearson")
+Group_v_Func_size_spearman <- cor.test(Group_v_Func_size$Group_effects, Group_v_Func_size$Func_size_effects, method = "spearman")
+
+# Create a data frame with results
+cross_methods_cor_results <- data.frame(
+  Comparison = c(
+    "Group vs PFN (Pearson)", "Group vs PFN (Spearman)",
+    "Func ext vs PFN (Pearson)", "Func ext vs PFN (Spearman)",
+    "Group vs Func ext (Pearson)", "Group vs Func ext (Spearman)"
+  ),
+  r = c(
+    Group_v_PFN_pearson$estimate,
+    Group_v_PFN_spearman$estimate,
+    Func_size_v_PFN_pearson$estimate,
+    Func_size_v_PFN_spearman$estimate,
+    Group_v_Func_size_pearson$estimate,
+    Group_v_Func_size_spearman$estimate
+  ),
+  p_value = c(
+    Group_v_PFN_pearson$p.value,
+    Group_v_PFN_spearman$p.value,
+    Func_size_v_PFN_pearson$p.value,
+    Func_size_v_PFN_spearman$p.value,
+    Group_v_Func_size_pearson$p.value,
+    Group_v_Func_size_spearman$p.value
+  )
+)
+
+# Write to CSV
+write_csv(cross_methods_cor_results,paste0(dout,"/PNC_scaling_3_method_correlations.csv"))
+```
