@@ -92,6 +92,10 @@ pfn_inAscend_indx <- c()
 for (t in c(1:17)) { pfn_inAscend_indx <- append(pfn_inAscend_indx,which(sorted_beta == t))} #if using numbers, switch all pfn_inAscend to pfn_inAscend_indx and comment out next line
 pfn_inAscend <- PFN_names[pfn_inAscend_indx]
 
+diff_sig <- read.csv("../../Results/22q_Group_v_PFN_Models/22q_Group_vs_PFN_uncont_matched_boot_results_two_sided.csv")
+diff_sig_p <- diff_sig$p_delta_magnitude_bonf
+stars <- ifelse(diff_sig_p < 0.05, "*", "")
+
 # Using 7 colors scheme for bar plot
 data <- data.frame(EffectSizes = as.numeric(betas)) 
 data$EffectRank <- as.numeric(sorted_beta)
@@ -117,10 +121,23 @@ TextColor <- c("#767676", "#767676", "#767676", "#767676", "black",
 BorderColor <- BorderColor1[pfn_inAscend_indx]
 BorderColor3 <- BorderColor2[pfn_inAscend_indx]
 TextColor_ordered <- TextColor[pfn_inAscend_indx]
+stars_ordered <- stars[pfn_inAscend_indx]
+
+#Add stars to data
+data$stars <- stars_ordered[sorted_beta]
+offset <- 0.4
+data$star_y <- ifelse(data$EffectSizes >= 0,
+                      data$EffectSizes + offset,
+                      data$EffectSizes - offset)
+data$star_vjust <- ifelse(data$EffectSizes >= 0, 0, 1)
 
 Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
   geom_bar(stat = "identity", fill=BorderColor3[sorted_beta], 
            colour = BorderColor[sorted_beta], linetype = "solid", width = 0.8) + 
+  geom_text(data = subset(data, stars != ""),
+          aes(x = EffectRank, y = star_y, label = stars, vjust = 0.75),
+          size = 8,
+          fontface = "bold") +
   labs(title = NULL, x = NULL, y = paste0("PFN Areal Change (%)")) + theme_classic() +
   theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
   theme(axis.text.y = ggtext::element_markdown(size= 21, color = TextColor_ordered), 
@@ -128,7 +145,7 @@ Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
         axis.title=ggtext::element_markdown(size = 25)) +
   #theme(axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1)) +
   scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_beta)) +
-  scale_y_continuous(limits = c(-11, 0)) +
+  scale_y_continuous(limits = c(-11.5, 0)) +
   coord_flip()
 
 Fig
@@ -185,6 +202,10 @@ pfn_inAscend_indx <- c()
 for (t in c(1:17)) { pfn_inAscend_indx <- append(pfn_inAscend_indx,which(sorted_beta == t))} #if using numbers, switch all pfn_inAscend to pfn_inAscend_indx and comment out next line
 pfn_inAscend <- PFN_names[pfn_inAscend_indx]
 
+diff_sig <- read.csv("../../Results/22q_Group_v_PFN_Models/22q_Group_vs_PFN_cont_matched_boot_results_two_sided.csv")
+diff_sig_p <- diff_sig$p_delta_magnitude_bonf
+stars <- ifelse(diff_sig_p < 0.05, "*", "")
+
 # Using 7 colors scheme for bar plot
 data <- data.frame(EffectSizes = as.numeric(betas)) 
 data$EffectRank <- as.numeric(sorted_beta)
@@ -210,10 +231,23 @@ TextColor <- c("#767676", "#767676", "#767676", "#767676", "#767676",
 BorderColor <- BorderColor1[pfn_inAscend_indx]
 BorderColor3 <- BorderColor2[pfn_inAscend_indx]
 TextColor_ordered <- TextColor[pfn_inAscend_indx]
+stars_ordered <- stars[pfn_inAscend_indx]
+
+#Add stars to data
+data$stars <- stars_ordered[sorted_beta]
+offset <- 0.4
+data$star_y <- ifelse(data$EffectSizes >= 0,
+                      data$EffectSizes + offset,
+                      data$EffectSizes - offset)
+data$star_vjust <- ifelse(data$EffectSizes >= 0, 0, 1)
 
 Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
   geom_bar(stat = "identity", fill=BorderColor3[sorted_beta], 
            colour = BorderColor[sorted_beta], linetype = "solid", width = 0.8) + 
+  geom_text(data = subset(data, stars != ""),
+          aes(x = EffectRank, y = star_y, label = stars, vjust = 0.75),
+          size = 8,
+          fontface = "bold") +
   labs(title = NULL, x = NULL, y = paste0("PFN Areal Change (%)")) + theme_classic() +
   theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
   theme(axis.text.y = ggtext::element_markdown(size= 21, color = TextColor_ordered), 

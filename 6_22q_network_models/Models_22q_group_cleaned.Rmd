@@ -328,7 +328,7 @@ Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
         axis.title=ggtext::element_markdown(size = 25)) +
   #theme(axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1)) +
   scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_beta)) +
-  scale_y_continuous(limits = c(-11, 0)) +
+  scale_y_continuous(limits = c(-11.5, 0)) +
   coord_flip()
 
 Fig

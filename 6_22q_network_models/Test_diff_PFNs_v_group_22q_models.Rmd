@@ -133,7 +133,7 @@ stopifnot(
 # All participants within each sampled subclass are retained together.
 # Fit the PFN GAM on that resampled matched dataset.
 # Fit the corresponding Group Atlas GAM on the exact same resampled matched dataset.
-# Extract the two raw log-area 22q coefficients: PFN + Group.
+# Extract the two log-area 22q coefficients: PFN + Group.
 # Calculate the comparison statistic: |PFN beta| - |Group beta|.
 # x 5000
 #
@@ -182,7 +182,7 @@ make_boot_stat <- function(full_data, y_pfn, y_group) {
     fit_pfn <- gam(
       log(d[[y_pfn]]) ~
         stat_22q +
-        log(TC_area) +
+        #log(TC_area) +           # COMMENT IN/OUT FOR SCALING CONT/UNCONT
         sex +
         euler +
         median_fd_combined +
@@ -195,7 +195,7 @@ make_boot_stat <- function(full_data, y_pfn, y_group) {
     fit_group <- gam(
       log(d[[y_group]]) ~
         stat_22q +
-        log(TC_area) +
+        #log(TC_area) +           # COMMENT IN/OUT FOR SCALING CONT/UNCONT
         sex +
         euler +
         median_fd_combined +
@@ -250,7 +250,7 @@ for (net in nets) {
     y_pfn,
     y_group,
     "stat_22q",
-    "TC_area",
+    #"TC_area",                 # COMMENT IN/OUT FOR SCALING CONT/UNCONT
     "sex",
     "euler",
     "median_fd_combined",
@@ -268,8 +268,8 @@ for (net in nets) {
   d_net$row_valid <-
     complete.cases(d_net[, required_vars]) &
     d_net[[y_pfn]] > 0 &
-    d_net[[y_group]] > 0 &
-    d_net$TC_area > 0
+    d_net[[y_group]] > 0
+    #& d_net$TC_area > 0          # COMMENT IN/OUT FOR SCALING CONT/UNCONT
 
   # Retain a matched subclass only if:
   # 1. every participant in that subclass has valid data
@@ -367,7 +367,7 @@ for (net in nets) {
     index = 3
   )$bca[4:5]
 
-  # Bootstrap CIs of raw 22q betas
+  # Bootstrap CIs of 22q betas
   ci_beta_pfn <- boot.ci(
     b,
     type = "bca",
@@ -431,7 +431,8 @@ write_csv(
   results,
   paste0(
     dout,
-    "/22q_Group_vs_PFN_raw_matched_boot_results_two_sided.csv"
+    "/22q_Group_vs_PFN_cont_matched_boot_results_two_sided.csv"         # TCA CONT
+    #"/22q_Group_vs_PFN_uncont_matched_boot_results_two_sided.csv"      # TCA UNCONT
   )
 )
 ```
