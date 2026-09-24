@@ -127,18 +127,22 @@ stopifnot(
 
 ```
 
-#Bootstrap (difference in 22q effect magnitude, 2-tailed)
+#Bootstrap (difference in 22q effect magnitude and beta, 2-tailed)
 ```{r}
-# Randomly sample matched subclasses with replacement.
-# All participants within each sampled subclass are retained together.
-# Fit the PFN GAM on that resampled matched dataset.
-# Fit the corresponding Group Atlas GAM on the exact same resampled matched dataset.
-# Extract the two log-area 22q coefficients: PFN + Group.
-# Calculate the comparison statistic: |PFN beta| - |Group beta|.
-# x 5000
+# Bootstrap direct comparison of PFN and Group Atlas 22q effects
 #
-# Positive delta = larger absolute 22q effect for PFN.
-# Negative delta = larger absolute 22q effect for Group Atlas.
+# Resample matched subclasses with replacement.
+# Fit PFN and Group Atlas models to the same bootstrap replicate.
+#
+# Primary:
+#   delta_beta = beta_PFN - beta_Group
+#   Tests whether the estimated 22q effects differ between representations.
+#
+# Secondary:
+#   delta_magnitude = |beta_PFN| - |beta_Group|
+#   Tests whether absolute 22q effect magnitude differs.
+#
+# R = 5000
 
 set.seed(1)
 boot_n <- 5000
@@ -182,7 +186,7 @@ make_boot_stat <- function(full_data, y_pfn, y_group) {
     fit_pfn <- gam(
       log(d[[y_pfn]]) ~
         stat_22q +
-        #log(TC_area) +           # COMMENT IN/OUT FOR SCALING CONT/UNCONT
+        log(TC_area) +           # COMMENT IN/OUT FOR SCALING CONT/UNCONT
         sex +
         euler +
         median_fd_combined +
@@ -195,7 +199,7 @@ make_boot_stat <- function(full_data, y_pfn, y_group) {
     fit_group <- gam(
       log(d[[y_group]]) ~
         stat_22q +
-        #log(TC_area) +           # COMMENT IN/OUT FOR SCALING CONT/UNCONT
+        log(TC_area) +           # COMMENT IN/OUT FOR SCALING CONT/UNCONT
         sex +
         euler +
         median_fd_combined +
@@ -213,7 +217,10 @@ make_boot_stat <- function(full_data, y_pfn, y_group) {
       beta_group = beta_group,
       delta_magnitude =
         abs(beta_pfn) -
-        abs(beta_group)
+        abs(beta_group),
+      delta_beta =
+        beta_pfn -
+        beta_group
     )
   }
 }
@@ -250,7 +257,7 @@ for (net in nets) {
     y_pfn,
     y_group,
     "stat_22q",
-    #"TC_area",                 # COMMENT IN/OUT FOR SCALING CONT/UNCONT
+    "TC_area",                 # COMMENT IN/OUT FOR SCALING CONT/UNCONT
     "sex",
     "euler",
     "median_fd_combined",
@@ -268,8 +275,8 @@ for (net in nets) {
   d_net$row_valid <-
     complete.cases(d_net[, required_vars]) &
     d_net[[y_pfn]] > 0 &
-    d_net[[y_group]] > 0
-    #& d_net$TC_area > 0          # COMMENT IN/OUT FOR SCALING CONT/UNCONT
+    d_net[[y_group]] > 0 &
+    d_net$TC_area > 0          # COMMENT IN/OUT FOR SCALING CONT/UNCONT
 
   # Retain a matched subclass only if:
   # 1. every participant in that subclass has valid data
@@ -331,7 +338,7 @@ stopCluster(cl)
 
 ```
 
-#Compare delta of boostrapped PFN and Group Atlas (difference in 22q effect magnitude, 2-tailed)
+#Compare delta of boostrapped PFN and Group Atlas (differences in 22q effect magnitude and effect, 2-tailed)
 ```{r}
 dout <- "../../Results/22q_Group_v_PFN_Models"
 dir.create(dout)
@@ -353,6 +360,7 @@ for (net in nets) {
   beta_pfn_obs   <- b$t0[1]
   beta_group_obs <- b$t0[2]
   delta_mag_obs  <- b$t0[3]
+  delta_beta_obs  <- b$t0[4]
 
   n_boot_valid <- sum(
     apply(b$t, 1, function(x) all(is.finite(x)))
@@ -365,6 +373,13 @@ for (net in nets) {
     b,
     type = "bca",
     index = 3
+  )$bca[4:5]
+  
+  # Bootstrap CI of difference in 22q effects
+  ci_delta_beta <- boot.ci(
+    b,
+    type = "bca",
+    index = 4
   )$bca[4:5]
 
   # Bootstrap CIs of 22q betas
@@ -391,6 +406,16 @@ for (net in nets) {
     alternative = "two.sided",
     index = 3
   )
+  
+  # H0: beta_PFN - beta_Group = 0
+  # H1: beta_PFN - beta_Group != 0
+  p_delta_beta <- boot.pval(
+    b,
+    type = "bca",
+    theta_null = 0,
+    alternative = "two.sided",
+    index = 4
+  )
 
   results[[net]] <- data.frame(
     PFN = pfn_name,
@@ -412,7 +437,12 @@ for (net in nets) {
     delta_magnitude = delta_mag_obs,
     delta_magnitude_CI_low = ci_delta_mag[1],
     delta_magnitude_CI_high = ci_delta_mag[2],
-    p_delta_magnitude = p_delta_mag
+    p_delta_magnitude = p_delta_mag,
+    
+    delta_beta = delta_beta_obs,
+    delta_beta_CI_low = ci_delta_beta[1],
+    delta_beta_CI_high = ci_delta_beta[2],
+    p_delta_beta = p_delta_beta
   )
 }
 
@@ -423,6 +453,11 @@ results <- results %>%
     p_delta_magnitude_bonf =
       p.adjust(
         p_delta_magnitude,
+        method = "bonferroni"
+      ),
+    p_delta_beta_bonf =
+      p.adjust(
+        p_delta_beta,
         method = "bonferroni"
       )
   )
