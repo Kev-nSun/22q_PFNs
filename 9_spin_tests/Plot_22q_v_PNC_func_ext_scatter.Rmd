@@ -1,0 +1,112 @@
+---
+title: "Plot_scaling_effect_scatterplots"
+author: "Kevin Sun"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(dplyr)
+library(readr)
+```
+
+## Import 22q effects
+```{r}
+Func_size_22q_effects <- read.csv("../../Results/22q_PFN_Func_Temp/subclass/log_log_22q_temp_func_area_summary_results_subclass.csv")
+PNC_PFN_func_effects <- read.csv("../../Results/PNC_PFN_Func_Temp/log_log_temp_func_area_summary_results.csv")
+```
+
+## Plot 22q vs scaling func rep effects
+```{r}
+dout <- "../../Results/Scatterplots"
+dir.create(dout)
+
+Group_atlas_size <- read.csv("../../../PNC_data/PNC_group_atlas/PNC_Group_atlas_PFN_sizes_and_avg_loading.csv")
+Func_size_Scaling_vs_22q <- data.frame(
+  Effect_Scaling = PNC_PFN_func_effects$beta, 
+  Effect_22q = Func_size_22q_effects$beta*100,
+  sig_PFN = PNC_PFN_func_effects$pvals_bonf < 0.05) # outline indicates sig func ext scaling models
+Func_size_Scaling_vs_22q$network <- factor(c("DM","SM","FP","SM","DA","VS","VA","DM","VA","VS","SM","DM","SM","DA","FP","AU","FP"),levels = c("DM","FP","VA","DA","AU","SM","VS"))
+
+
+Func_size_Scaling_vs_22q$outline <- ifelse(
+  Func_size_Scaling_vs_22q$sig_PFN,
+  "Black",
+  "Transparent"
+)
+
+net_colors <- c(
+  "DM" = "#E76178",
+  "SM" = "#7499C2",
+  "FP" = "#F5BA2E",
+  "DA" = "#00A131",
+  "VS" = "#AF33AD",
+  "VA" = "#E443FF",
+  "AU" = "#4E31A8"
+)
+
+network_sizes_vert_count <- Group_atlas_size$PFN_size
+network_sizes_normed <- network_sizes_vert_count/1000
+Func_size_Scaling_vs_22q$network_size <- network_sizes_normed
+
+Fig <- ggplot(data = Func_size_Scaling_vs_22q, aes(x = Effect_Scaling, y = Effect_22q)) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "#474747") +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "#474747") +
+    geom_smooth(method = "lm", color = "gray", fill = "gray", alpha = 0.2) +
+    geom_point(
+      aes(fill = network, color = outline, size = network_size),
+      shape = 21,
+      stroke = 2.5,
+      show.legend = c(fill = TRUE, color = FALSE, size = FALSE)
+    ) +
+    scale_fill_manual(values = net_colors, name = "Network") +
+    scale_color_manual(
+      values = c("Black" = "black", "Transparent" = "transparent"),
+      guide = "none"
+    ) +
+    scale_size_continuous(range = c(3, 8)) +
+    guides(color = guide_legend(override.aes = list(size = 3)),size = "none") +
+    labs(title = paste0(NULL),
+           x = expression("Scaling Effect"),
+           y = bquote("22q11DS Effect (%)")) +
+    theme_classic() +
+    theme(
+      plot.title = NULL,
+      axis.text.x = element_text(size = 25, color = "black"),
+      axis.text.y = element_text(size = 25, color = "black"),
+      axis.title  = element_text(size = 25)
+    ) +
+    theme(legend.position = "none")
+    #coord_cartesian(xlim = c(0.7, 1.3), clip = "off")
+print(Fig)
+ggsave(paste0(dout,"/Func_size_Scaling_vs_22q_effects_points_3_8_subclass_log_log.png"), width =16, height = 16, dpi = 600, units = "cm")
+ggsave(paste0(dout,"/Func_size_Scaling_vs_22q_effects_points_3_8_subclass_log_log.pdf"), device = cairo_pdf, width = 16, height = 16, dpi = 600, units = "cm")
+
+```
+
+
+## Test and save correlations
+```{r}
+
+Func_size_Scaling_vs_22q_pearson <- cor.test(Func_size_Scaling_vs_22q$Effect_Scaling, Func_size_Scaling_vs_22q$Effect_22q, method = "pearson")
+Func_size_Scaling_vs_22q_spearman <- cor.test(Func_size_Scaling_vs_22q$Effect_Scaling, Func_size_Scaling_vs_22q$Effect_22q, method = "spearman")
+
+# Create a data frame with results
+cross_var_cor_results <- data.frame(
+  Comparison = c(
+    "Func Size Scaling vs 22q (Pearson)", "Func Size Scaling vs 22q (Spearman)"
+  ),
+  r = c(
+    Func_size_Scaling_vs_22q_pearson$estimate,
+    Func_size_Scaling_vs_22q_spearman$estimate
+  ),
+  p_value = c(
+    Func_size_Scaling_vs_22q_pearson$p.value,
+    Func_size_Scaling_vs_22q_spearman$p.value
+  )
+)
+
+# Write to CSV
+write_csv(cross_var_cor_results,paste0(dout,"/Func_ext_temp_scaling_v_22q_corr_subclass_log_log.csv"))
+```
