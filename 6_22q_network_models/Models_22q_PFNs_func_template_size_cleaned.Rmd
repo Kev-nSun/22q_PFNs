@@ -37,7 +37,7 @@ TC_area_all <- rbind(areas_PNC[,c("subject","TC_area")],areas_22q[,c("subject","
 
 matched_all <- merge(matched_all,TC_area_all,by="subject") # n = 215
 
-PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-lh", "DM-A", "SM-rh", "DA-ant", "ParMem", "Auditory", "FP-B")
+PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-rh", "DM-A", "SM-lh", "DA-ant", "ParMem", "Auditory", "FP-B")
 ```
 
 
