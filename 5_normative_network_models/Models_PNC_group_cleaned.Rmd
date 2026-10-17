@@ -23,7 +23,7 @@ colnames(PNC_TC_and_group_network_areas)[1] <- "participant_id"
 PNC_demos <- read.csv("../../Inputs/filtered_demo_PNC.csv") #n = 1332
 PNC_all <- merge(PNC_TC_and_group_network_areas,PNC_demos,by="participant_id") # n = 1332
 
-PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-lh", "DM-A", "SM-rh", "DA-ant", "ParMem", "Auditory", "FP-B")
+PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-rh", "DM-A", "SM-lh", "DA-ant", "ParMem", "Auditory", "FP-B")
 ```
 
 #Factorize sex
