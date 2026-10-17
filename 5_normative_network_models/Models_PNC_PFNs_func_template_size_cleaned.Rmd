@@ -27,7 +27,7 @@ PNC_all_prop <- PNC_all_size
 PNC_all_prop[, c(7:23)] <- PNC_all_prop[, c(7:23)]/PNC_all_prop$template_TCA
 write.csv(PNC_all_prop,'C:/Users/kevin/OneDrive/Documents/NGG_PhD/Alexander-Bloch/22q_Project/PNC_data/PNC_all_PFN_template_func_prop.csv')
 
-PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-lh", "DM-A", "SM-rh", "DA-ant", "ParMem", "Auditory", "FP-B")
+PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-rh", "DM-A", "SM-lh", "DA-ant", "ParMem", "Auditory", "FP-B")
 ```
 
 
