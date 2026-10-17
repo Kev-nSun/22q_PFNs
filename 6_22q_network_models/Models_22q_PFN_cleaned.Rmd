@@ -32,7 +32,7 @@ matched_all <- merge(matched_demo,areas_all,by="subject") # n = 215
 
 write_csv(matched_all,paste0("../../Inputs/22q_PNC_matched_all.csv"))
 
-PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-lh", "DM-A", "SM-rh", "DA-ant", "ParMem", "Auditory", "FP-B")
+PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-rh", "DM-A", "SM-lh", "DA-ant", "ParMem", "Auditory", "FP-B")
 ```
 
 #Factorize 22q status and sex
