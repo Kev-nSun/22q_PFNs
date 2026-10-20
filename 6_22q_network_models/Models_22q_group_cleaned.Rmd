@@ -88,6 +88,17 @@ print(tab_model(model_22q_TCA_log,digits=2,digits.p=2,show.se=TRUE,show.stat=TRU
 
 ```
 
+## Get raw effect of 22q on log TC Area, no imaging covs
+``` {r}
+dout <- "../../Results/22q_TCA"
+dir.create(dout)
+
+model_22q_TCA_log <- gam(log(TC_area) ~ stat_22q+sex+s(age,k=4)+s(subclass, bs = "re"),data=matched_all,method = "REML")
+print(summary(model_22q_TCA_log))
+print(tab_model(model_22q_TCA_log,digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/22q_Effect_on_TCA_log_REML_subclass_no_euler_FD.doc")))
+
+```
+
 ## Get raw effect of 22q on TC Area
 ``` {r}
 dout <- "../../Results/22q_TCA"
@@ -230,6 +241,8 @@ print(Fig)
 ggsave(paste0(dout,"/22q_impact_on_TCA_adj_raw_binary_plot_ggavg_REML_flipped_subclass.png"), width = 20, height = 6, dpi = 600, units = "cm")
 ggsave(paste0(dout,"/22q_impact_on_TCA_adj_raw_binary_plot_ggavg_REML_flipped_subclass.pdf"), device = cairo_pdf, width = 20, height = 6, dpi = 600, units = "cm")
 
+write.csv(adj_22q_pred,paste0(dout,"/22q_mod_pred_TSA.csv"))
+
 ```
 
 ## Get sex interaction effect of 22q on TC Area
@@ -253,7 +266,7 @@ models_no_TCA <- list()
 for (net in c(1:17)) {
   PFN_area <- paste0("PFN",net)
   model_no_TCA <- gam(log(get(PFN_area)) ~ stat_22q+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all,method = "REML")
-  print(tab_model(model_no_TCA,dv.labels=c(paste0("PFN ",net, " Area")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/22q_Group_no_TCA_PFN_",net,"_REML_subclass.doc")))
+  #print(tab_model(model_no_TCA,dv.labels=c(paste0("PFN ",net, " Area")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/22q_Group_no_TCA_PFN_",net,"_REML_subclass.doc")))
   models_no_TCA[[net]] <- model_no_TCA #store all models in list
 }
 
@@ -328,7 +341,7 @@ Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
         axis.title=ggtext::element_markdown(size = 25)) +
   #theme(axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1)) +
   scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_beta)) +
-  scale_y_continuous(limits = c(-11.5, 0)) +
+  scale_y_continuous(limits = c(-11, 0)) +
   coord_flip()
 
 Fig

@@ -53,7 +53,7 @@ models_no_TCA <- list()
 for (net in c(1:17)) {
   PFN_area <- sprintf("PFN%02d",net)
   model_no_TCA <- gam(log(get(PFN_area)) ~ stat_22q+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all,method = "REML")
-  print(tab_model(model_no_TCA,dv.labels=c(paste0("PFN ",net, " Area")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/22q_PFN_no_TCA_PFN_",net,"_REML_subclass.doc")))
+  #print(tab_model(model_no_TCA,dv.labels=c(paste0("PFN ",net, " Area")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/22q_PFN_no_TCA_PFN_",net,"_REML_subclass.doc")))
   models_no_TCA[[net]] <- model_no_TCA #store all models in list
 }
 
@@ -92,9 +92,9 @@ pfn_inAscend_indx <- c()
 for (t in c(1:17)) { pfn_inAscend_indx <- append(pfn_inAscend_indx,which(sorted_beta == t))} #if using numbers, switch all pfn_inAscend to pfn_inAscend_indx and comment out next line
 pfn_inAscend <- PFN_names[pfn_inAscend_indx]
 
-diff_sig <- read.csv("../../Results/22q_Group_v_PFN_Models/22q_Group_vs_PFN_uncont_matched_boot_results_two_sided.csv")
-diff_sig_p <- diff_sig$p_delta_magnitude_bonf
-stars <- ifelse(diff_sig_p < 0.05, "*", "")
+# diff_sig <- read.csv("../../Results/22q_Group_v_PFN_Models/22q_Group_vs_PFN_uncont_matched_boot_results_two_sided.csv")
+# diff_sig_p <- diff_sig$p_delta_magnitude_bonf
+# stars <- ifelse(diff_sig_p < 0.05, "*", "")
 
 # Using 7 colors scheme for bar plot
 data <- data.frame(EffectSizes = as.numeric(betas)) 
@@ -121,23 +121,23 @@ TextColor <- c("#767676", "#767676", "#767676", "#767676", "black",
 BorderColor <- BorderColor1[pfn_inAscend_indx]
 BorderColor3 <- BorderColor2[pfn_inAscend_indx]
 TextColor_ordered <- TextColor[pfn_inAscend_indx]
-stars_ordered <- stars[pfn_inAscend_indx]
+# stars_ordered <- stars[pfn_inAscend_indx]
 
 #Add stars to data
-data$stars <- stars_ordered[sorted_beta]
-offset <- 0.4
-data$star_y <- ifelse(data$EffectSizes >= 0,
-                      data$EffectSizes + offset,
-                      data$EffectSizes - offset)
-data$star_vjust <- ifelse(data$EffectSizes >= 0, 0, 1)
+# data$stars <- stars_ordered[sorted_beta]
+# offset <- 0.4
+# data$star_y <- ifelse(data$EffectSizes >= 0,
+#                       data$EffectSizes + offset,
+#                       data$EffectSizes - offset)
+# data$star_vjust <- ifelse(data$EffectSizes >= 0, 0, 1)
 
 Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
   geom_bar(stat = "identity", fill=BorderColor3[sorted_beta], 
            colour = BorderColor[sorted_beta], linetype = "solid", width = 0.8) + 
-  geom_text(data = subset(data, stars != ""),
-          aes(x = EffectRank, y = star_y, label = stars, vjust = 0.75),
-          size = 8,
-          fontface = "bold") +
+  # geom_text(data = subset(data, stars != ""),
+  #         aes(x = EffectRank, y = star_y, label = stars, vjust = 0.75),
+  #         size = 8,
+  #         fontface = "bold") +
   labs(title = NULL, x = NULL, y = paste0("PFN Areal Change (%)")) + theme_classic() +
   theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
   theme(axis.text.y = ggtext::element_markdown(size= 21, color = TextColor_ordered), 
@@ -145,7 +145,7 @@ Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
         axis.title=ggtext::element_markdown(size = 25)) +
   #theme(axis.text.x = ggtext::element_markdown(angle = 45, hjust = 1)) +
   scale_x_discrete(labels = as.character(pfn_inAscend),limits = as.character(sorted_beta)) +
-  scale_y_continuous(limits = c(-11.5, 0)) +
+  scale_y_continuous(limits = c(-11, 0)) +
   coord_flip()
 
 Fig
@@ -164,7 +164,7 @@ models_TCA_euler_age <- list()
 for (net in c(1:17)) {
   PFN_area <- sprintf("PFN%02d",net)
   model_TCA_euler_age <- gam(log(get(PFN_area)) ~ stat_22q+log(TC_area)+sex+euler+median_fd_combined+s(age,k=4)+s(subclass, bs = "re"),data=matched_all,method = "REML")
-  print(tab_model(model_TCA_euler_age,dv.labels=c(paste0("PFN ",net, " Area")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/22q_PFN_TCA_euler_age_PFN_",net,"_REML_subclass.doc")))
+  #print(tab_model(model_TCA_euler_age,dv.labels=c(paste0("PFN ",net, " Area")),digits=2,digits.p=2,show.se=TRUE,show.stat=TRUE,string.stat = "t",string.se = "Std. Error",show.intercept=TRUE,show.ci = FALSE, p.adjust="none",p.style="scientific", file = paste0(dout,"/22q_PFN_TCA_euler_age_PFN_",net,"_REML_subclass.doc")))
   models_TCA_euler_age[[net]] <- model_TCA_euler_age #store all models in list
 }
 ```
@@ -202,9 +202,9 @@ pfn_inAscend_indx <- c()
 for (t in c(1:17)) { pfn_inAscend_indx <- append(pfn_inAscend_indx,which(sorted_beta == t))} #if using numbers, switch all pfn_inAscend to pfn_inAscend_indx and comment out next line
 pfn_inAscend <- PFN_names[pfn_inAscend_indx]
 
-diff_sig <- read.csv("../../Results/22q_Group_v_PFN_Models/22q_Group_vs_PFN_cont_matched_boot_results_two_sided.csv")
-diff_sig_p <- diff_sig$p_delta_magnitude_bonf
-stars <- ifelse(diff_sig_p < 0.05, "*", "")
+# diff_sig <- read.csv("../../Results/22q_Group_v_PFN_Models/22q_Group_vs_PFN_cont_matched_boot_results_two_sided.csv")
+# diff_sig_p <- diff_sig$p_delta_magnitude_bonf
+# stars <- ifelse(diff_sig_p < 0.05, "*", "")
 
 # Using 7 colors scheme for bar plot
 data <- data.frame(EffectSizes = as.numeric(betas)) 
@@ -231,23 +231,23 @@ TextColor <- c("#767676", "#767676", "#767676", "#767676", "#767676",
 BorderColor <- BorderColor1[pfn_inAscend_indx]
 BorderColor3 <- BorderColor2[pfn_inAscend_indx]
 TextColor_ordered <- TextColor[pfn_inAscend_indx]
-stars_ordered <- stars[pfn_inAscend_indx]
+# stars_ordered <- stars[pfn_inAscend_indx]
 
 #Add stars to data
-data$stars <- stars_ordered[sorted_beta]
-offset <- 0.4
-data$star_y <- ifelse(data$EffectSizes >= 0,
-                      data$EffectSizes + offset,
-                      data$EffectSizes - offset)
-data$star_vjust <- ifelse(data$EffectSizes >= 0, 0, 1)
+# data$stars <- stars_ordered[sorted_beta]
+# offset <- 0.4
+# data$star_y <- ifelse(data$EffectSizes >= 0,
+#                       data$EffectSizes + offset,
+#                       data$EffectSizes - offset)
+# data$star_vjust <- ifelse(data$EffectSizes >= 0, 0, 1)
 
 Fig <- ggplot(data, aes(EffectRank, EffectSizes)) +
   geom_bar(stat = "identity", fill=BorderColor3[sorted_beta], 
            colour = BorderColor[sorted_beta], linetype = "solid", width = 0.8) + 
-  geom_text(data = subset(data, stars != ""),
-          aes(x = EffectRank, y = star_y, label = stars, vjust = 0.75),
-          size = 8,
-          fontface = "bold") +
+  # geom_text(data = subset(data, stars != ""),
+  #         aes(x = EffectRank, y = star_y, label = stars, vjust = 0.75),
+  #         size = 8,
+  #         fontface = "bold") +
   labs(title = NULL, x = NULL, y = paste0("PFN Areal Change (%)")) + theme_classic() +
   theme(plot.title = ggtext::element_markdown(size=25, hjust = 0.5)) +
   theme(axis.text.y = ggtext::element_markdown(size= 21, color = TextColor_ordered), 
