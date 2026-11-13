@@ -1,0 +1,730 @@
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(sjPlot)
+library(mgcv)
+library(boot)
+```
+
+#Import areas and demographics
+```{r}
+#Read in func size data
+PNC_PFNs_func_size <- read.csv("../../Inputs/PNC_template_summary_PFNs.csv") # n = 1482
+del22q_PFNs_func_size <- read.csv("../../Inputs/22q_template_summary_PFNs.csv") # n = 114
+colnames(PNC_PFNs_func_size) <- gsub("_soft_parcel_normed","", x = colnames(PNC_PFNs_func_size))
+
+#merge 22q and PNC func data
+func_all <- rbind(PNC_PFNs_func_size,del22q_PFNs_func_size) # n = 1596
+colnames(func_all) <- gsub("TC_area", "template_TCA", colnames(func_all))
+
+#merge pooled data w covariate data to get  matched dataset
+matched_demo <- read.csv("../../Results/Demographic_matching/matched_all_demo_QC_median_fd_r1x3.csv") # n = 215
+matched_all <- merge(matched_demo,func_all,by="subject") # n = 215
+
+#Read in area data
+areas_PNC <- read.csv("../../Inputs/PNC_summary_group.csv") # n = 1598
+areas_22q <- read.csv("../../Inputs/22q_summary_group.csv") # n = 131
+areas_22q <- areas_22q[areas_22q$session != 8971,] #Remove ses-008971 of sub-016095, since this subject has 2 sessions -> n = 130
+TC_area_all <- rbind(areas_PNC[,c("subject","TC_area")],areas_22q[,c("subject","TC_area")]) # n = 1728
+
+matched_all <- merge(matched_all,TC_area_all,by="subject") # n = 215
+
+PFN_names <- c("DM-B", "SM-foot", "FP-A", "SM-face", "DA-post", "VS-peri", "Salience", "Language", "CingOp", "VS-cent", "SM-rh", "DM-A", "SM-lh", "DA-ant", "ParMem", "Auditory", "FP-B")
+```
+
+#Factorize 22q status and sex
+```{r}
+matched_all$stat_22q <- factor(matched_all$stat_22q)
+matched_all$sex <- factor(matched_all$sex)
+matched_all$subclass <- factor(matched_all$subclass)
+```
+
+# Run bootstrap on Pearson correlation
+```{r}
+library(mgcv)
+library(dplyr)
+library(boot)
+library(boot.pval)
+library(parallel)
+
+set.seed(1)
+
+boot_n <- 5000
+nets <- 1:17
+network_vars <- sprintf("PFN%02d", nets)
+
+dout <- "../../Results/Scatterplots/22q_boot"
+dir.create(dout, recursive = TRUE, showWarnings = FALSE)
+
+# ------------------------------------------------------------
+# Prepare common complete-case sample
+# ------------------------------------------------------------
+
+nets <- 1:17
+network_vars <- sprintf("PFN%02d", nets)
+
+required_vars <- c(
+  network_vars,
+  "stat_22q",
+  "TC_area",
+  "sex",
+  "euler",
+  "median_fd_combined",
+  "age",
+  "subclass"
+)
+
+analysis_dat <- matched_all %>%
+  filter(
+    if_all(all_of(required_vars), ~ !is.na(.))
+  )
+
+analysis_dat <- droplevels(analysis_dat)
+
+stopifnot(
+  nlevels(analysis_dat$stat_22q) == 2,
+  identical(levels(analysis_dat$stat_22q), c("0", "1")),
+  all(is.finite(analysis_dat$TC_area)),
+  all(analysis_dat$TC_area > 0),
+  all(as.matrix(analysis_dat[, network_vars]) > 0),
+  !anyDuplicated(analysis_dat$subject)
+)
+
+cat("Analysis sample:", nrow(analysis_dat), "\n")
+print(table(analysis_dat$stat_22q))
+
+
+# ------------------------------------------------------------
+# Import normative allometry coefficients
+# ------------------------------------------------------------
+
+PNC_PFN_func_effects <- read.csv(
+  "../../Results/PNC_PFN_Func_Temp/log_log_temp_func_area_summary_results.csv"
+)
+
+pnc_allometry_beta <- PNC_PFN_func_effects$beta
+
+stopifnot(
+  length(pnc_allometry_beta) == 17,
+  all(is.finite(pnc_allometry_beta))
+)
+
+# Verify the CSV rows are ordered PFN01-PFN17.
+
+
+# ------------------------------------------------------------
+# Calculate observed Figure 6B statistics
+# ------------------------------------------------------------
+
+observed_beta_22q <- numeric(17)
+
+for (net in nets) {
+
+  model_dat <- analysis_dat
+  model_dat$y <- log(model_dat[[network_vars[net]]])
+
+  fit <- gam(
+    y ~ stat_22q +
+      log(TC_area) +
+      sex +
+      euler +
+      median_fd_combined +
+      s(age, k = 4) +
+      s(subclass, bs = "re"),
+    data = model_dat,
+    method = "REML"
+  )
+
+  observed_beta_22q[net] <- unname(
+    coef(fit)[["stat_22q1"]]
+  )
+}
+
+names(observed_beta_22q) <- network_vars
+
+observed_r <- cor(
+  pnc_allometry_beta,
+  observed_beta_22q,
+  method = "pearson"
+)
+
+observed_slope <- unname(
+  coef(lm(observed_beta_22q ~ pnc_allometry_beta))[2]
+)
+
+observed_stats <- c(
+  observed_beta_22q,
+  pearson_r = observed_r,
+  slope = observed_slope
+)
+
+cat("Observed Pearson r:", observed_r, "\n")
+cat("Observed slope:", observed_slope, "\n")
+
+
+# ------------------------------------------------------------
+# Create dataframe of unique matched subclasses
+# ------------------------------------------------------------
+
+subclass_df <- data.frame(
+  subclass = unique(as.character(analysis_dat$subclass))
+)
+
+n_subclasses <- nrow(subclass_df)
+
+cat("Number of subclasses:", n_subclasses, "\n")
+
+
+# ------------------------------------------------------------
+# Bootstrap statistic
+#
+# Resample complete matched subclasses with replacement.
+# The SAME bootstrap sample is used for all 17 networks.
+#
+# Returns:
+# 1-17: genotype coefficients
+# 18: Pearson correlation
+# 19: cross-network regression slope
+# ------------------------------------------------------------
+
+make_figure6B_stat <- function(
+    full_data,
+    normative_beta,
+    network_names
+) {
+
+  # Capture inputs in the function environment.
+  # This allows the statistic to run on Windows PSOCK workers.
+  full_data <- full_data
+  normative_beta <- as.numeric(normative_beta)
+  network_names <- as.character(network_names)
+
+  genotype_levels <- levels(full_data$stat_22q)
+  sex_levels <- levels(full_data$sex)
+
+  function(cluster_data, indices) {
+
+    sampled_subclasses <- as.character(
+      cluster_data$subclass[indices]
+    )
+
+    # Reconstruct participant-level bootstrap sample
+    d_list <- lapply(
+      seq_along(sampled_subclasses),
+      function(i) {
+
+        original_subclass <- sampled_subclasses[i]
+
+        tmp <- full_data[
+          as.character(full_data$subclass) == original_subclass,
+          ,
+          drop = FALSE
+        ]
+
+        # Assign a unique random-effect ID for each
+        # occurrence of a sampled subclass
+        tmp$boot_subclass <- paste0("boot_", i)
+
+        tmp
+      }
+    )
+
+    d <- dplyr::bind_rows(d_list)
+
+    # Preserve factor reference levels
+    d$stat_22q <- factor(
+      d$stat_22q,
+      levels = genotype_levels
+    )
+
+    d$sex <- factor(
+      d$sex,
+      levels = sex_levels
+    )
+
+    d$boot_subclass <- factor(
+      d$boot_subclass
+    )
+
+    # --------------------------------------------------------
+    # Fit 17 GAMs to the SAME resampled subjects
+    # --------------------------------------------------------
+
+    beta_22q <- numeric(length(network_names))
+
+    for (net in seq_along(network_names)) {
+
+      PFN_area <- network_names[net]
+
+      d$y <- log(d[[PFN_area]])
+
+      fit <- mgcv::gam(
+        y ~
+          stat_22q +
+          log(TC_area) +
+          sex +
+          euler +
+          median_fd_combined +
+          s(age, k = 4) +
+          s(boot_subclass, bs = "re"),
+        data = d,
+        method = "REML"
+      )
+
+      beta_22q[net] <- unname(
+        coef(fit)[["stat_22q1"]]
+      )
+    }
+
+    if (!all(is.finite(beta_22q))) {
+      stop("Non-finite genotype coefficient.")
+    }
+
+    if (sd(beta_22q) == 0) {
+      stop("Zero variance in network genotype coefficients.")
+    }
+
+    # --------------------------------------------------------
+    # Figure 6B Pearson correlation
+    # --------------------------------------------------------
+
+    r <- cor(
+      normative_beta,
+      beta_22q,
+      method = "pearson"
+    )
+
+    # --------------------------------------------------------
+    # Figure 6B regression slope
+    # --------------------------------------------------------
+
+    slope <- unname(
+      coef(lm(beta_22q ~ normative_beta))[2]
+    )
+
+    c(
+      setNames(beta_22q, network_names),
+      pearson_r = r,
+      slope = slope
+    )
+  }
+}
+
+
+# ------------------------------------------------------------
+# Construct statistic
+# ------------------------------------------------------------
+
+figure6B_stat <- make_figure6B_stat(
+  full_data = analysis_dat,
+  normative_beta = pnc_allometry_beta,
+  network_names = network_vars
+)
+
+
+# ------------------------------------------------------------
+# Parallel processing
+#
+# Limit to 8 workers to avoid excessive RAM use.
+# Increase if sufficient memory is available.
+# ------------------------------------------------------------
+
+n_cores <- max(
+  1,
+  min(8, parallel::detectCores() - 2)
+)
+
+cat("Using", n_cores, "workers\n")
+
+cl <- parallel::makeCluster(n_cores)
+
+# Load required packages on workers
+invisible(parallel::clusterEvalQ(cl, {
+  library(mgcv)
+  library(boot)
+  library(dplyr)
+}))
+
+# Reproducible independent RNG streams
+parallel::clusterSetRNGStream(
+  cl,
+  iseed = 1
+)
+
+
+# ------------------------------------------------------------
+# Run bootstrap
+# ------------------------------------------------------------
+
+boot_figure6B <- tryCatch(
+  {
+    boot::boot(
+      data = subclass_df,
+      statistic = figure6B_stat,
+      R = boot_n,
+      parallel = "snow",
+      ncpus = n_cores,
+      cl = cl
+    )
+  },
+  finally = {
+    parallel::stopCluster(cl)
+  }
+)
+
+colnames(boot_figure6B$t) <- names(observed_stats)
+
+saveRDS(
+  boot_figure6B,
+  paste0(dout, "/Figure6B_boot_object.rds")
+)
+
+cat("Bootstrap completed.\n")
+```
+
+## Get 95% CIs
+```{r}
+# ------------------------------------------------------------
+# Extract bootstrap statistics
+# ------------------------------------------------------------
+
+boot_r <- boot_figure6B$t[, "pearson_r"]
+boot_slope <- boot_figure6B$t[, "slope"]
+
+stopifnot(
+  all(is.finite(boot_figure6B$t)),
+  all(is.finite(boot_r)),
+  all(is.finite(boot_slope)),
+  isTRUE(all.equal(
+    as.numeric(boot_figure6B$t0),
+    as.numeric(observed_stats),
+    tolerance = 1e-6
+  ))
+)
+
+
+# ------------------------------------------------------------
+# Calculate empirical influence values ONCE per statistic
+#
+# type = "jack" uses leave-one-subclass-out jackknife.
+#
+# Because boot_figure6B$data contains one row per subclass,
+# jackknife deletions operate at the matched-subclass level.
+#
+# Index 18 = Pearson r
+# Index 19 = regression slope
+# ------------------------------------------------------------
+
+cat("Calculating jackknife influence values for Pearson r...\n")
+
+L_r <- boot::empinf(
+  boot.out = boot_figure6B,
+  index = 18,
+  type = "jack"
+)
+
+cat("Calculating jackknife influence values for slope...\n")
+
+L_slope <- boot::empinf(
+  boot.out = boot_figure6B,
+  index = 19,
+  type = "jack"
+)
+
+
+# ------------------------------------------------------------
+# Verify influence values
+# ------------------------------------------------------------
+
+stopifnot(
+  length(L_r) == n_subclasses,
+  length(L_slope) == n_subclasses,
+  all(is.finite(L_r)),
+  all(is.finite(L_slope))
+)
+
+
+# ------------------------------------------------------------
+# Save influence values to avoid recalculation
+# ------------------------------------------------------------
+
+saveRDS(
+  list(
+    L_r = L_r,
+    L_slope = L_slope
+  ),
+  paste0(dout, "/Figure6B_jackknife_influence.rds")
+)
+
+
+# ------------------------------------------------------------
+# BCa 95% confidence intervals
+#
+# Supply precomputed L values.
+# This prevents boot.ci() from calculating them again.
+# ------------------------------------------------------------
+
+r_CI <- boot::boot.ci(
+  boot_figure6B,
+  type = c("bca", "perc"),
+  index = 18,
+  L = L_r
+)
+
+slope_CI <- boot::boot.ci(
+  boot_figure6B,
+  type = c("bca", "perc"),
+  index = 19,
+  L = L_slope
+)
+
+
+# ------------------------------------------------------------
+# Extract BCa and percentile intervals
+# ------------------------------------------------------------
+
+r_CI_95 <- r_CI$bca[4:5]
+slope_CI_95 <- slope_CI$bca[4:5]
+
+r_perc_95 <- r_CI$percent[4:5]
+slope_perc_95 <- slope_CI$percent[4:5]
+
+
+# ------------------------------------------------------------
+# Two-sided BCa p-values from CI inversion
+#
+# Pass the SAME influence values to boot.pval().
+#
+# H0: r = 0
+# H1: r != 0
+#
+# H0: slope = 0
+# H1: slope != 0
+# ------------------------------------------------------------
+
+r_p <- boot.pval::boot.pval(
+  boot_figure6B,
+  type = "bca",
+  theta_null = 0,
+  alternative = "two.sided",
+  index = 18,
+  L = L_r
+)
+
+slope_p <- boot.pval::boot.pval(
+  boot_figure6B,
+  type = "bca",
+  theta_null = 0,
+  alternative = "two.sided",
+  index = 19,
+  L = L_slope
+)
+
+
+# ------------------------------------------------------------
+# Print results
+# ------------------------------------------------------------
+
+cat(
+  "\nObserved Pearson r:", observed_r,
+  "\nPearson BCa 95% CI:", r_CI_95,
+  "\nPearson percentile 95% CI:", r_perc_95,
+  "\nPearson BCa two-sided p:", r_p,
+  "\n\nObserved slope:", observed_slope,
+  "\nSlope BCa 95% CI:", slope_CI_95,
+  "\nSlope percentile 95% CI:", slope_perc_95,
+  "\nSlope BCa two-sided p:", slope_p,
+  "\n"
+)
+
+print(r_CI)
+print(slope_CI)
+```
+
+# Save out results
+```{r}
+# ------------------------------------------------------------
+# Save 17 network genotype coefficients per iteration
+# ------------------------------------------------------------
+
+boot_beta_out <- data.frame(
+  iteration = 1:boot_n,
+  boot_figure6B$t[, network_vars, drop = FALSE]
+)
+
+write.csv(
+  boot_beta_out,
+  paste0(dout, "/Figure6B_boot_22q_betas.csv"),
+  row.names = FALSE
+)
+
+# ------------------------------------------------------------
+# Save correlation and slope bootstrap distributions
+# ------------------------------------------------------------
+
+boot_assoc_out <- data.frame(
+  iteration = 1:boot_n,
+  pearson_r = boot_r,
+  slope = boot_slope
+)
+
+write.csv(
+  boot_assoc_out,
+  paste0(dout, "/Figure6B_boot_association_distribution.csv"),
+  row.names = FALSE
+)
+
+
+# ------------------------------------------------------------
+# Save observed coefficients and PNC allometry effects
+# ------------------------------------------------------------
+
+observed_network_out <- data.frame(
+  network = network_vars,
+  pnc_allometry_beta = pnc_allometry_beta,
+  observed_beta_22q = as.numeric(
+    observed_stats[network_vars]
+  )
+)
+
+write.csv(
+  observed_network_out,
+  paste0(dout, "/Figure6B_observed_network_coefficients.csv"),
+  row.names = FALSE
+)
+
+# ------------------------------------------------------------
+# Save observed correlation, slope, CIs, p-values, percentile intervals
+# ------------------------------------------------------------
+boot_summary_out <- data.frame(
+  statistic = c("pearson_r", "slope"),
+
+  observed = c(
+    observed_r,
+    observed_slope
+  ),
+
+  BCa_CI_lower = c(
+    r_CI_95[1],
+    slope_CI_95[1]
+  ),
+
+  BCa_CI_upper = c(
+    r_CI_95[2],
+    slope_CI_95[2]
+  ),
+
+  percentile_CI_lower = c(
+    r_perc_95[1],
+    slope_perc_95[1]
+  ),
+
+  percentile_CI_upper = c(
+    r_perc_95[2],
+    slope_perc_95[2]
+  ),
+
+  p_bca_two_sided = c(
+    r_p,
+    slope_p
+  ),
+
+  n_boot = boot_n,
+  n_subclasses = n_subclasses
+)
+
+write.csv(
+  boot_summary_out,
+  paste0(dout, "/Figure6B_boot_BCa_summary.csv"),
+  row.names = FALSE
+)
+```
+
+# Examine bootstrap dist and jackknife influence
+```{r}
+data.frame(
+  statistic = c("Pearson r", "Slope"),
+
+  observed = c(observed_r, observed_slope),
+
+  bootstrap_mean = c(
+    mean(boot_r),
+    mean(boot_slope)
+  ),
+
+  bootstrap_median = c(
+    median(boot_r),
+    median(boot_slope)
+  ),
+
+  bootstrap_sd = c(
+    sd(boot_r),
+    sd(boot_slope)
+  ),
+
+  proportion_positive = c(
+    mean(boot_r >= 0),
+    mean(boot_slope >= 0)
+  )
+)
+
+summary(L_r)
+summary(L_slope)
+
+# BCa acceleration parameters
+bca_acceleration <- function(L) {
+  sum(L^3) / (6 * sum(L^2)^(3/2))
+}
+
+c(
+  acceleration_r = bca_acceleration(L_r),
+  acceleration_slope = bca_acceleration(L_slope)
+)
+
+# BCa bias-correction term
+get_z0 <- function(draws, observed) {
+  qnorm(mean(draws < observed))
+}
+
+z0_r <- get_z0(boot_r, observed_r)
+z0_slope <- get_z0(boot_slope, observed_slope)
+
+# BCa-adjusted percentile positions for a 95% CI
+get_bca_probs <- function(z0, a) {
+
+  z <- qnorm(c(0.025, 0.975))
+
+  pnorm(
+    z0 + (z0 + z) / (1 - a * (z0 + z))
+  )
+}
+
+bca_probs_r <- get_bca_probs(
+  z0_r,
+  0.002398259
+)
+
+bca_probs_slope <- get_bca_probs(
+  z0_slope,
+  0.004704048
+)
+
+data.frame(
+  statistic = c("Pearson r", "Slope"),
+  z0 = c(z0_r, z0_slope),
+  lower_quantile = c(bca_probs_r[1], bca_probs_slope[1]),
+  upper_quantile = c(bca_probs_r[2], bca_probs_slope[2]),
+  lower_order_position = 5000 * c(
+    bca_probs_r[1],
+    bca_probs_slope[1]
+  ),
+  proportion_positive = c(
+    mean(boot_r >= 0),
+    mean(boot_slope >= 0)
+  )
+)
+```
