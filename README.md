@@ -19,3 +19,5 @@ Step 6. Network-level models investigating 22q11DS effects on PFNs (functional a
 Step 7. Vertex-level models investigating normative scaling of PFNs (PFN vertex loadings)
 
 Step 8. Vertex-level models investigating 22q11DS effects on PFNs (PFN vertex loadings)
+
+Step 9. Spin tests across effect sizes and annotated maps, along with other cross-effect tests
